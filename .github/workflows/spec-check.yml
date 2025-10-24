@@ -1,0 +1,14 @@
+name: spec-check
+on:
+  pull_request:
+    types: [opened, edited, synchronize]
+jobs:
+  ensure-spec:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check PR body includes spec link
+        run: |
+          BODY="$(jq -r .pull_request.body "$GITHUB_EVENT_PATH")"
+          echo "$BODY" | grep -E 'specs/[0-9]{4}-' >/dev/null || \
+          (echo "PR must link a spec (e.g., specs/0001-...md)"; exit 1)
