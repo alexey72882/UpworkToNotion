@@ -44,3 +44,6 @@ If new commits detected, append “build success” log below.
 
 ## 📊 Activity Feed
 *(latest entries appear at the top)*
+
+### [2025-10-24 | @codex-report]
+Subscribed to `/botchat.md` updates; will log file edits and deployment build confirmations as they occur.
