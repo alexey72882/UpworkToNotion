@@ -24,7 +24,7 @@ export type NotionItem = {
 };
 
 function buildProps(item: NotionItem) {
-  const props: Record<string, unknown> = {
+  const props: Record<string, any> = {
     Name: { title: [{ text: { content: item.title } }] },
     Stage: { select: { name: item.stage } },
     Type: { select: { name: item.type } },
@@ -45,7 +45,7 @@ async function findPageIdByExternalId(externalId: string): Promise<string | null
     // Use the generic request surface — reliable across SDK versions/runtimes.
     const resp: any = await notion.request({
       path: `databases/${NOTION_DB}/query`,
-      method: "POST",
+      method: "post",
       body: {
         filter: {
           property: "External ID",
@@ -59,7 +59,7 @@ async function findPageIdByExternalId(externalId: string): Promise<string | null
     try {
       const respAll: any = await notion.request({
         path: `databases/${NOTION_DB}/query`,
-        method: "POST",
+        method: "post",
       });
       const match = (respAll?.results || []).find(
         (p: any) =>
@@ -81,10 +81,10 @@ export async function upsertToNotion(item: NotionItem): Promise<"created" | "upd
 
   const existingId = await findPageIdByExternalId(item.externalId);
   if (existingId) {
-    await notion.pages.update({ page_id: existingId, properties: props });
+    await notion.pages.update({ page_id: existingId, properties: props as any });
     return "updated";
   }
 
-  await notion.pages.create({ parent: { database_id: NOTION_DB }, properties: props });
+  await notion.pages.create({ parent: { database_id: NOTION_DB }, properties: props as any });
   return "created";
 }
