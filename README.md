@@ -40,3 +40,5 @@ Expected: `{"ok":true}` when NOTION_TOKEN and NOTION_DATABASE_ID are set and the
 
 ### Notion v5
 This project targets `@notionhq/client@^5`. The debug endpoint checks `databases.retrieve`, and the sync uses `databases.query` with a defensive fallback. Ensure the integration is invited to the database and env vars are set.
+
+<!-- trigger deployment -->
