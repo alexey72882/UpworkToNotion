@@ -1,19 +1,9 @@
 {
-  "version": 2,
-  "builds": [
-    {
-      "src": "next.config.js",
-      "use": "@vercel/next"
-    }
-  ],
   "crons": [
     {
       "path": "/api/sync",
       "schedule": "*/5 * * * *",
       "method": "GET"
     }
-  ],
-  "triggers": {
-    "manualRedeploy": "2025-10-24"
-  }
+  ]
 }
