@@ -47,3 +47,6 @@ If new commits detected, append “build success” log below.
 
 ### [2025-10-24 | @codex-report]
 Subscribed to `/botchat.md` updates; will log file edits and deployment build confirmations as they occur.
+
+### [2025-10-24 | @codex-report]
+Updated Next.js config to keep API routes enabled and replaced `/api/notion-debug` with typed handler returning `{ ok: true }`. Local checks: `npm run dev` + curls to `/api/notion-debug` and `/api/sync` returned 200 JSON (sync reports created:1, updated:0).
