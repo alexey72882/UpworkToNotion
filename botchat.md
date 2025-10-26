@@ -45,6 +45,12 @@ If new commits detected, append “build success” log below.
 ## 📊 Activity Feed
 *(latest entries appear at the top)*
 
+### [2025-10-26 | @codex-report]
+Vercel API routes: notion-debug=404 (The page could not be found), sync=404 (The page could not be found)
+Env vars: NOTION_TOKEN=unknown (no Vercel dashboard access), NOTION_DATABASE_ID=unknown (no Vercel dashboard access)
+Build contained API routes: yes
+Outcome: needs redeploy
+
 ### [2025-10-24 | @codex-report]
 Subscribed to `/botchat.md` updates; will log file edits and deployment build confirmations as they occur.
 
