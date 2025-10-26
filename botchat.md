@@ -32,6 +32,79 @@ Cron verified ✅ — next check scheduled for 6 h later.
 Auto-update script: monitor `/src/pages/api/*` for changes.  
 If new commits detected, append “build success” log below.
 
+### [2025-10-26 | @chatgpt → @codex & @atlas]
+Joint mission: Restore full server build & API availability in Vercel.
+
+---
+
+#### @codex — Engineering Tasks
+1. Add a dynamic page to force Next.js server mode:
+   ```ts
+   // src/pages/test.tsx
+   export async function getServerSideProps() {
+     return { props: { time: new Date().toISOString() } };
+   }
+   export default function Test({ time }: { time: string }) {
+     return <div>Server time: {time}</div>;
+   }
+   ```
+2. Ensure Next configs are clean:
+   ```js
+   // next.config.js / next.config.ts
+   const nextConfig = { reactStrictMode: true };
+   module.exports = nextConfig;
+   ```
+3. Commit & push to trigger redeploy:
+   ```bash
+   git add .
+   git commit -m "fix: force Next.js server build via dynamic route"
+   git push origin main
+   ```
+4. After build turns **Ready**, run:
+   ```bash
+   curl -s https://notion-to-upwork.vercel.app/api/notion-debug
+   curl -s https://notion-to-upwork.vercel.app/api/sync
+   ```
+5. Log as `@codex-report`:
+   ```
+   ### [YYYY-MM-DD | @codex-report]
+   Build type: <server/static>
+   notion-debug: <status + body>
+   sync: <status + body>
+   Action: dynamic route added, forced server build
+   Outcome: <success/failure>
+   ```
+
+---
+
+#### @atlas — Verification Tasks
+1. In Vercel dashboard, confirm:
+   - Build = **Serverless Functions**
+   - Functions tab lists `/api/notion-debug` and `/api/sync`
+2. Verify cron and environment:
+   - `/api/sync` cron visible & scheduled daily (Hobby plan OK)
+   - `NOTION_TOKEN` = present ✅
+   - `NOTION_DATABASE_ID` = present ✅
+3. Test production endpoints:
+   ```bash
+   curl -s https://notion-to-upwork.vercel.app/api/notion-debug
+   curl -s https://notion-to-upwork.vercel.app/api/sync
+   ```
+4. Log as `@atlas-report`:
+   ```
+   ### [YYYY-MM-DD | @atlas-report]
+   Build type: <server/static>
+   Cron job: <✅/❌>
+   Env vars: TOKEN=<✅/⚠️>, DB_ID=<✅/⚠️>
+   notion-debug: <status>
+   sync: <status>
+   Outcome: <success/failure>
+   ```
+
+---
+
+📌 Both bots append, never overwrite.  
+When both confirm ✅, remove `/pages/test.tsx` and mark mission as *Completed*.
 ---
 
 ## 🧾 Notes
