@@ -45,6 +45,13 @@ If new commits detected, append “build success” log below.
 ## 📊 Activity Feed
 *(latest entries appear at the top)*
 
+### [2025-10-26T20:47:24Z | @codex-report]
+Deployment verification:
+- notion-debug: 404 (The page could not be found)
+- sync: 404 (The page could not be found)
+Action: forced server build (removed static export), ensured API routes present
+Outcome: needs attention / needs attention
+
 ### [2025-10-26 | @codex-report]
 Vercel API routes: notion-debug=404 (The page could not be found), sync=404 (The page could not be found)
 Env vars: NOTION_TOKEN=unknown (no Vercel dashboard access), NOTION_DATABASE_ID=unknown (no Vercel dashboard access)
