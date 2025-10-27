@@ -10,6 +10,94 @@ setGlobalDispatcher(
   }),
 );
 
+async function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+type ExchangeResult =
+  | { ok: true; status: number; json: any; endpoint: string }
+  | {
+      ok: false;
+      status?: number;
+      body?: string;
+      error?: string;
+      endpoint: string;
+    };
+
+async function exchangeWithRetry(params: {
+  authB64: string;
+  code: string;
+  redirectUri: string;
+  attempts?: number;
+  backoffMs?: number;
+}): Promise<ExchangeResult> {
+  const { authB64, code, redirectUri } = params;
+  const attempts = params.attempts ?? 3;
+  const backoffMs = params.backoffMs ?? 400;
+
+  const endpoints = [
+    "https://www.upwork.com/api/v3/oauth2/token",
+    "https://api.upwork.com/api/v3/oauth2/token",
+  ];
+
+  for (const endpoint of endpoints) {
+    let lastError: unknown = null;
+
+    for (let i = 0; i < attempts; i++) {
+      try {
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            Authorization: `Basic ${authB64}`,
+            "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": "notion-to-upwork/1.0 (+vercel)",
+          },
+          body: new URLSearchParams({
+            grant_type: "authorization_code",
+            code,
+            redirect_uri: redirectUri,
+          }),
+        });
+
+        const raw = await response.text();
+        let parsed: any = raw;
+        try {
+          parsed = JSON.parse(raw);
+        } catch {
+          parsed = raw;
+        }
+
+        if (!response.ok) {
+          return {
+            ok: false,
+            status: response.status,
+            body: typeof parsed === "string" ? parsed : JSON.stringify(parsed),
+            endpoint,
+          };
+        }
+
+        return {
+          ok: true,
+          status: response.status,
+          json: parsed,
+          endpoint,
+        };
+      } catch (error) {
+        lastError = error;
+        await sleep(backoffMs * (i + 1));
+      }
+    }
+
+    return {
+      ok: false,
+      error: lastError instanceof Error ? lastError.message : String(lastError),
+      endpoint,
+    };
+  }
+
+  return { ok: false, error: "unreachable", endpoint: "n/a" };
+}
+
 export const config = {
   runtime: "nodejs",
   regions: ["iad1"],
@@ -38,40 +126,26 @@ export default async function handler(
       return res.status(500).json({ ok: false, error: "Missing UPWORK_* envs" });
     }
 
-    const auth = Buffer.from(`${client_id}:${client_secret}`).toString("base64");
+    const authB64 = Buffer.from(`${client_id}:${client_secret}`).toString("base64");
 
-    const tokenResponse = await fetch("https://www.upwork.com/api/v3/oauth2/token", {
-      method: "POST",
-      headers: {
-        Authorization: `Basic ${auth}`,
-        "Content-Type": "application/x-www-form-urlencoded",
-        "User-Agent": "notion-to-upwork/1.0 (+vercel)",
-      },
-      body: new URLSearchParams({
-        grant_type: "authorization_code",
-        code: String(code),
-        redirect_uri,
-      }),
+    const result = await exchangeWithRetry({
+      authB64,
+      code: String(code),
+      redirectUri: redirect_uri,
     });
 
-    const rawBody = await tokenResponse.text();
-    let parsedBody: unknown = rawBody;
-    try {
-      parsedBody = JSON.parse(rawBody);
-    } catch {
-      // leave as text when JSON parsing fails
-    }
-
-    if (!tokenResponse.ok) {
-      return res.status(tokenResponse.status).json({
+    if (!result.ok) {
+      return res.status(result.status ?? 502).json({
         ok: false,
         error: "token_exchange_failed",
-        status: tokenResponse.status,
-        body: parsedBody,
+        status: result.status,
+        endpoint: result.endpoint,
+        body: result.body,
+        details: result.error,
       });
     }
 
-    const data = parsedBody as {
+    const data = result.json as {
       access_token: string;
       refresh_token: string;
       expires_in: number;
@@ -85,7 +159,7 @@ export default async function handler(
       scope: data.scope,
     });
 
-    return res.status(200).json({ ok: true, saved: true });
+    return res.status(200).json({ ok: true, saved: true, endpoint: result.endpoint });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : String(e);
     const details =
