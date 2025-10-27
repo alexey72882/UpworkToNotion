@@ -21,6 +21,7 @@ export default async function handler(
         status: result.status,
         url: result.url,
         body: result.body ?? result.error,
+        details: result.error,
       });
     }
 
