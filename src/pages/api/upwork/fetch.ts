@@ -1,34 +1,31 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { getValidAccessToken } from "@/lib/upworkToken";
+import { callUpwork } from "@/lib/upworkClient";
+
+export const config = { runtime: "nodejs" };
 
 export default async function handler(
-  _req: NextApiRequest,
+  req: NextApiRequest,
   res: NextApiResponse,
 ) {
-  try {
-    const access = await getValidAccessToken();
-    if (!access) {
-      return res.status(401).json({ ok: false, error: "no_token" });
-    }
-
-    const response = await fetch("https://www.upwork.com/api/v3/contracts", {
-      headers: {
-        Authorization: `Bearer ${access}`,
-      },
-    });
-
-    if (!response.ok) {
-      const body = await response.text();
-      return res
-        .status(response.status)
-        .json({ ok: false, error: "upwork_error", status: response.status, body });
-    }
-
-    const data = await response.json();
-    return res.status(200).json({ ok: true, data });
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : typeof error === "string" ? error : String(error);
-    return res.status(500).json({ ok: false, error: message });
+  const { path = "contracts?limit=10" } = req.query;
+  if (Array.isArray(path)) {
+    return res.status(400).json({ ok: false, error: "bad_path_param" });
   }
+
+  const result = await callUpwork(String(path));
+  if (!result.ok) {
+    return res.status(result.status ?? 502).json({
+      ok: false,
+      error: "upstream_failed",
+      status: result.status,
+      url: result.url,
+      body: result.body ?? result.error,
+    });
+  }
+
+  return res.status(200).json({
+    ok: true,
+    url: result.url,
+    data: result.json,
+  });
 }
