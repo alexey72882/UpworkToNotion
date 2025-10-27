@@ -714,3 +714,166 @@ Outcome: <success | still failing + reason>
 Callback: 502 {"error":"token_exchange_failed","status":502,"body":{"error":"invalid_grant","error_description":"The provided authorization grant (e.g., authorization code, resource owner credentials) is invalid"}}
 _netcheck: httpbin=200, google=200, upwork=405
 Outcome: still failing — valid Upwork authorization code required
+
+````markdown
+### [2025-10-27 | @chatgpt → @codex] Stabilize Upwork token exchange: retries + endpoint fallback + structured errors
+
+**Why:** Latest callback shows `TypeError: fetch failed` from Undici (Node fetch). That’s a network‑level failure, not an OAuth denial. We’ll make the exchange resilient with (1) retries, (2) alternate endpoint, and (3) fully structured error output so we can see exactly where it fails next time.
+
+---
+
+#### 1) Edit `src/pages/api/upwork/callback.ts` (add robust token exchange)
+Paste this at the top (after other imports). If `Agent/setGlobalDispatcher` exists already, keep your current values and just add the retry helpers below.
+
+```ts
+// Networking hardening (if not already present):
+import { Agent, setGlobalDispatcher } from "undici";
+setGlobalDispatcher(new Agent({
+  keepAliveTimeout: 30_000,
+  keepAliveMaxTimeout: 60_000,
+  connect: { timeout: 10_000 },
+}));
+
+// Retry helpers
+async function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
+
+type XResult =
+  | { ok: true; status: number; json: any; endpoint: string }
+  | { ok: false; status?: number; body?: string; error?: string; endpoint: string };
+
+async function exchangeWithRetry(params: {
+  authB64: string;
+  code: string;
+  redirectUri: string;
+  attempts?: number;          // default 3
+  backoffMs?: number;         // default 400
+}) : Promise<XResult> {
+  const { authB64, code, redirectUri } = params;
+  const attempts = params.attempts ?? 3;
+  const backoffMs = params.backoffMs ?? 400;
+
+  // Two equivalent endpoints, some regions resolve one more reliably than the other
+  const endpoints = [
+    "https://www.upwork.com/api/v3/oauth2/token",
+    "https://api.upwork.com/api/v3/oauth2/token",
+  ];
+
+  for (const endpoint of endpoints) {
+    let lastErr: any = null;
+
+    for (let i = 0; i < attempts; i++) {
+      try {
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            Authorization: `Basic ${authB64}`,
+            "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": "notion-to-upwork/1.0 (+vercel)",
+          },
+          body: new URLSearchParams({
+            grant_type: "authorization_code",
+            code,
+            redirect_uri: redirectUri,
+          }),
+        });
+
+        const raw = await res.text();
+        let parsed: any = null;
+        try { parsed = JSON.parse(raw); } catch {}
+
+        if (!res.ok) {
+          // Bubble upstream body so we can see invalid_grant etc.
+          return { ok: false, status: res.status, body: raw, endpoint };
+        }
+
+        return { ok: true, status: res.status, json: parsed ?? raw, endpoint };
+      } catch (e: any) {
+        lastErr = e;
+        // Transient: backoff and retry
+        await sleep(backoffMs * (i + 1));
+      }
+    }
+
+    // All attempts failed on this endpoint; surface last error
+    return { ok: false, error: lastErr?.message ?? String(lastErr), endpoint };
+  }
+
+  // Should never happen
+  return { ok: false, error: "unreachable", endpoint: "n/a" };
+}
+```
+
+Now replace the current token‑exchange block inside the handler with:
+
+```ts
+const client_id = process.env.UPWORK_CLIENT_ID!;
+const client_secret = process.env.UPWORK_CLIENT_SECRET!;
+const redirect_uri = process.env.UPWORK_REDIRECT_URI!;
+const authB64 = Buffer.from(`${client_id}:${client_secret}`).toString("base64");
+
+const result = await exchangeWithRetry({
+  authB64,
+  code: String(code),
+  redirectUri: redirect_uri,
+});
+
+if (!result.ok) {
+  // Network or upstream failure
+  return res.status(result.status ?? 502).json({
+    ok: false,
+    error: "token_exchange_failed",
+    status: result.status,
+    endpoint: result.endpoint,
+    body: result.body,
+    details: result.error,
+  });
+}
+
+// Success path: persist and return
+const data = result.json as { access_token:string; refresh_token:string; expires_in:number; scope?:string };
+await saveTokens({
+  access_token: data.access_token,
+  refresh_token: data.refresh_token,
+  expires_in: data.expires_in,
+  scope: data.scope,
+});
+return res.status(200).json({ ok: true, saved: true, endpoint: result.endpoint });
+```
+
+> Leave `export const config = { runtime: "nodejs", regions: ["iad1"] }` in place if you already added it.
+
+---
+
+#### 2) Commit & deploy
+```bash
+git add src/pages/api/upwork/callback.ts
+git commit -m "fix(oauth): add retries + endpoint fallback + structured errors on token exchange"
+git push origin main
+```
+
+---
+
+#### 3) Verify (prod)
+```bash
+# Redirect still healthy
+curl -sI https://notion-to-upwork.vercel.app/api/upwork/auth | head -n1
+
+# Run real OAuth in the browser (fresh code)
+open "https://notion-to-upwork.vercel.app/api/upwork/auth"
+# Expected:
+#  - ✅ { "ok": true, "saved": true, "endpoint": "<chosen-endpoint>" }
+#  - ❌ { "ok": false, "error": "token_exchange_failed", "status": <code>, "endpoint": "...", "body": "...", "details": "<message>" }
+```
+
+---
+
+#### 4) Report
+```
+### [YYYY-MM-DD | @codex-report]
+Callback: <status + JSON incl. endpoint/body>
+Outcome: <success | failing + next hypothesis>
+```
+````
+### [2025-10-27 | @codex-report]
+Callback: 400 {"error":"token_exchange_failed","status":400,"endpoint":"https://www.upwork.com/api/v3/oauth2/token","body":{"error":"invalid_grant","error_description":"The provided authorization grant (e.g., authorization code, resource owner credentials) is invalid"}}
+Outcome: still failing — need fresh OAuth approval with valid code
