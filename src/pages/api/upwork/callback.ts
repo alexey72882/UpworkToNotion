@@ -1,12 +1,12 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { saveTokens, type TokenPayload } from "@/lib/upworkToken";
+import { saveTokens } from "@/lib/upworkToken";
 
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
   try {
-    const { code, error } = req.query as { code?: string; error?: string };
+    const { code, error } = req.query;
 
     if (error) {
       return res.status(400).json({ ok: false, error });
@@ -34,44 +34,30 @@ export default async function handler(
       },
       body: new URLSearchParams({
         grant_type: "authorization_code",
-        code,
+        code: String(code),
         redirect_uri,
       }),
     });
 
-    const data = await tokenRes.json();
+    const data = await tokenRes.json().catch(() => ({}));
 
     if (!tokenRes.ok) {
-      return res.status(502).json({ ok: false, error: data });
-    }
-
-    const tokens = data as Partial<TokenPayload>;
-    if (
-      !tokens.access_token ||
-      !tokens.refresh_token ||
-      typeof tokens.expires_in === "undefined"
-    ) {
       return res
         .status(502)
-        .json({ ok: false, error: "Invalid token payload from Upwork" });
-    }
-
-    const expiresIn = Number(tokens.expires_in);
-    if (!Number.isFinite(expiresIn)) {
-      return res.status(502).json({ ok: false, error: "Invalid expires_in from Upwork" });
+        .json({ ok: false, error: "token_exchange_failed", details: data });
     }
 
     await saveTokens({
-      access_token: tokens.access_token,
-      refresh_token: tokens.refresh_token,
-      expires_in: expiresIn,
-      scope: typeof tokens.scope === "string" ? tokens.scope : undefined,
+      access_token: (data as any).access_token,
+      refresh_token: (data as any).refresh_token,
+      expires_in: (data as any).expires_in,
+      scope: (data as any).scope,
     });
 
     return res.status(200).json({ ok: true, source: "callback", saved: true });
   } catch (e: unknown) {
     const message =
-      e instanceof Error ? e.message : typeof e === "string" ? e : "unknown error";
+      e instanceof Error ? e.message : typeof e === "string" ? e : String(e);
     return res.status(500).json({ ok: false, error: message });
   }
 }
