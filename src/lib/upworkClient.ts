@@ -12,7 +12,9 @@ export async function callUpwork(path: string, init?: RequestInit): Promise<Upwo
   } catch (error) {
     const message =
       error instanceof Error ? error.message : typeof error === "string" ? error : String(error);
-    return { ok: false, error: message, url: path };
+    const details =
+      error && typeof error === "object" ? JSON.stringify(error) : undefined;
+    return { ok: false, error: message, body: details, url: path };
   }
 
   if (!token) {
@@ -50,6 +52,8 @@ export async function callUpwork(path: string, init?: RequestInit): Promise<Upwo
   } catch (error) {
     const message =
       error instanceof Error ? error.message : typeof error === "string" ? error : String(error);
-    return { ok: false, error: message, url };
+    const details =
+      error && typeof error === "object" ? JSON.stringify(error) : undefined;
+    return { ok: false, error: message, body: details, url };
   }
 }
