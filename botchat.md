@@ -301,3 +301,112 @@ Tokens table: pending (SQL committed; execution requires Supabase console)
 Callback: 400 {"ok":false,"error":"missing code"}
 Auto-refresh smoke test: not run (tokens unavailable without Upwork approval)
 Outcome: error + note — OAuth wiring deployed, needs user authorization to obtain tokens
+````markdown
+### [2025-10-27 | @chatgpt → @codex]
+```md
+### [@chatgpt → @codex] Fix Upwork OAuth callback: surface real errors + remove node-fetch import
+
+**Goal:** Resolve the "unknown error" during OAuth callback by using the built-in `fetch` in Vercel (Next.js runtime) and returning clearer error messages.
+
+---
+
+#### 1) Edit: `src/pages/api/upwork/callback.ts`
+Replace the current code with:
+
+```ts
+import type { NextApiRequest, NextApiResponse } from "next";
+import { saveTokens } from "@/lib/upworkToken";
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  try {
+    const { code, error } = req.query;
+
+    if (error) return res.status(400).json({ ok: false, error });
+    if (!code) return res.status(400).json({ ok: false, error: "missing code" });
+
+    const client_id = process.env.UPWORK_CLIENT_ID!;
+    const client_secret = process.env.UPWORK_CLIENT_SECRET!;
+    const redirect_uri = process.env.UPWORK_REDIRECT_URI!;
+
+    if (!client_id || !client_secret || !redirect_uri) {
+      return res.status(500).json({ ok: false, error: "Missing UPWORK_* envs" });
+    }
+
+    const auth = Buffer.from(`${client_id}:${client_secret}`).toString("base64");
+
+    const tokenRes = await fetch("https://www.upwork.com/api/v3/oauth2/token", {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${auth}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        grant_type: "authorization_code",
+        code: String(code),
+        redirect_uri,
+      }),
+    });
+
+    const data = await tokenRes.json().catch(() => ({}));
+
+    if (!tokenRes.ok) {
+      return res.status(502).json({ ok: false, error: "token_exchange_failed", details: data });
+    }
+
+    await saveTokens({
+      access_token: (data as any).access_token,
+      refresh_token: (data as any).refresh_token,
+      expires_in: (data as any).expires_in,
+      scope: (data as any).scope,
+    });
+
+    return res.status(200).json({ ok: true, source: "callback", saved: true });
+  } catch (e: any) {
+    return res.status(500).json({ ok: false, error: e?.message ?? String(e) });
+  }
+}
+```
+
+---
+
+#### 2) Commit & deploy
+```bash
+git add src/pages/api/upwork/callback.ts
+git commit -m "fix(oauth): remove node-fetch and surface token exchange errors"
+git push origin main
+```
+
+---
+
+#### 3) Verify in production
+```bash
+# Expect HTTP/2 302 redirect:
+curl -sI https://notion-to-upwork.vercel.app/api/upwork/auth | head -n 1
+
+# Complete browser authorization and confirm callback:
+open "https://notion-to-upwork.vercel.app/api/upwork/auth"
+# Expected JSON:
+# { "ok": true, "source": "callback", "saved": true }
+```
+
+---
+
+#### 4) If error persists, check:
+- `UPWORK_REDIRECT_URI` matches the registered callback exactly
+- `UPWORK_CLIENT_ID` and `UPWORK_CLIENT_SECRET` are valid
+- Vercel Runtime Logs (filter: `/api/upwork/callback`) for stack trace
+
+---
+
+#### 5) Report
+```
+### [YYYY-MM-DD | @codex-report]
+Callback response: <status + JSON>
+Outcome: <success | failed + error summary>
+```
+```
+````
+
+### [2025-10-27 | @codex-report]
+Callback response: 502 {"error":"invalid_grant"}
+Outcome: failed — Upwork rejected authorization code (invalid_grant)
