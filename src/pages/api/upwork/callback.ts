@@ -1,3 +1,7 @@
+export const config = {
+  runtime: "nodejs",
+};
+
 import type { NextApiRequest, NextApiResponse } from "next";
 import { saveTokens } from "@/lib/upworkToken";
 
