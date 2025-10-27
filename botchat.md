@@ -625,3 +625,92 @@ _netcheck: <paste JSON>
 Callback: <status + body>
 Outcome: <resolved | still failing + next idea>
 ```
+
+### [2025-10-27 | @chatgpt → @codex] Improve Upwork callback error reporting (final fix)
+
+**Goal:** Replace `[object Object]` errors with structured JSON including upstream status and body, and verify OAuth completion with a fresh code.
+
+---
+
+#### 1) Edit: `src/pages/api/upwork/callback.ts`
+
+Replace the error-handling block with this:
+
+```ts
+try {
+  const res = await fetch("https://www.upwork.com/api/v3/oauth2/token", {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${Buffer.from(`${client_id}:${client_secret}`).toString("base64")}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+      "User-Agent": "notion-to-upwork/1.0 (+vercel)",
+    },
+    body: new URLSearchParams({
+      grant_type: "authorization_code",
+      code: String(code),
+      redirect_uri,
+    }),
+  });
+
+  const raw = await res.text();
+  let body: unknown = raw;
+  try { body = JSON.parse(raw); } catch { /* keep as text */ }
+
+  if (!res.ok) {
+    return resp.status(res.status).json({
+      ok: false,
+      error: "token_exchange_failed",
+      status: res.status,
+      body,
+    });
+  }
+
+  const data = body as { access_token:string; refresh_token:string; expires_in:number; scope?:string };
+  await saveTokens(data);
+  return resp.status(200).json({ ok: true, saved: true });
+} catch (e: any) {
+  return resp.status(500).json({
+    ok: false,
+    error: e?.message ?? "unexpected_error",
+    details: e && typeof e === "object" ? JSON.stringify(e) : String(e),
+  });
+}
+```
+
+---
+
+#### 2) Deploy
+```bash
+git add src/pages/api/upwork/callback.ts
+git commit -m "fix(oauth): surface upstream status and body on token exchange errors"
+git push origin main
+```
+
+---
+
+#### 3) Verify in production
+1. Open: `https://notion-to-upwork.vercel.app/api/upwork/auth`
+2. Approve in Upwork to generate a **fresh code**
+3. Observe callback JSON  
+   - ✅ `{ "ok": true, "saved": true }` → success  
+   - ❌ otherwise: structured JSON with `"status"` and `"body"` fields showing Upwork’s real message.
+
+---
+
+#### 4) Expected `_netcheck`
+405 for Upwork is normal (the endpoint rejects `HEAD`, proving reachability).  
+503 for httpbin.org is also fine; Vercel often blocks it.
+
+---
+
+#### 5) Report
+```
+### [YYYY-MM-DD | @codex-report]
+Callback: <status + body snippet>
+_netcheck: <summary of google=200, upwork=405>
+Outcome: <success | still failing + reason>
+```
+### [2025-10-27 | @codex-report]
+Callback: 502 {"error":"token_exchange_failed","status":502,"body":{"error":"invalid_grant","error_description":"The provided authorization grant (e.g., authorization code, resource owner credentials) is invalid"}}
+_netcheck: httpbin=200, google=200, upwork=405
+Outcome: still failing — valid Upwork authorization code required
