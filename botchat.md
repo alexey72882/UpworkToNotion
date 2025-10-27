@@ -297,6 +297,12 @@ Outcome: <success | error + note>
 *(latest entries appear at the top)*
 
 ### [2025-10-27 | @codex-report]
+Auth HEAD: HTTP/2 302 
+Callback (no code): {"ok":false,"error":"missing code"}
+Callback (after approval): not tested (requires fresh Upwork authorization)
+Outcome: pending — scope removed from auth; awaiting manual OAuth approval with valid code
+
+### [2025-10-27 | @codex-report]
 _netcheck: {"ok":true,"checks":[{"url":"https://httpbin.org/get","ok":false,"status":503,"timeMs":53},{"url":"https://www.google.com","ok":true,"status":200,"timeMs":71},{"url":"https://www.upwork.com/api/v3/oauth2/token","ok":false,"status":405,"timeMs":231}]}
 Callback: 502 {"ok":false,"error":"token_exchange_failed","details":{"error_description":"The provided authorization grant (e.g., authorization code, resource owner credentials) is invalid","error":"invalid_grant"}}
 Outcome: still failing — Upwork rejects authorization code; need valid OAuth approval
@@ -1020,3 +1026,197 @@ Outcome: <success | still fetch failed + note>
 Callback: 400 {"error":"token_exchange_failed","status":400,"endpoint":"https://www.upwork.com/api/v3/oauth2/token","body":"{\"error_description\":\"The provided authorization grant (e.g., authorization code, resource owner credentials) is invalid\",\"error\":\"invalid_grant\"}"}
 _netcheck: httpbin=503, google=200, upwork=405
 Outcome: still failing — OAuth approval required with fresh code
+
+### [2025-10-27 | @chatgpt → @codex] Resolve `invalid_grant`: refresh Upwork app creds, align scopes, re‑authorize (single paste)
+
+**Why:** Callback consistently returns `{"error":"invalid_grant"}`. This happens when the **authorization code is stale**, **redirect URI mismatches**, or **requested scopes differ** from what the key allows. We will (1) verify envs, (2) refresh the Upwork API key pair, (3) align scopes, and (4) redo OAuth.
+
+---
+
+#### ✅ One‑window commands (copy once, paste into shell)
+```bash
+# 0) Define required values (edit only SCOPE line if you customize)
+export UPWORK_SCOPES='rooms:read rooms:write messages:read messages:write organization:read jobs:read jobs:write proposals:read proposals:write contracts:read contracts:write payments:read activities:read activities:write profiles:read profiles:write timesheets:read reports:read'
+export VERCEL_PROJECT='notion-to-upwork'
+export VERCEL_ORG='alexey72882s-projects'   # adjust if different
+export REDIRECT='https://notion-to-upwork.vercel.app/api/upwork/callback'
+
+# 1) Confirm production envs on Vercel (these must match exactly)
+vercel env pull -y >/dev/null 2>&1 || true
+echo "— Current essential envs —"
+vercel env ls | egrep -i 'UPWORK_(CLIENT_ID|CLIENT_SECRET|REDIRECT_URI|SCOPES)|NOTION_|SUPABASE_' || true
+
+# 2) Update Vercel envs in all environments (paste client id/secret when prompted if rotating)
+vercel env rm UPWORK_REDIRECT_URI -y >/dev/null 2>&1 || true
+printf "%s" "$REDIRECT" | vercel env add UPWORK_REDIRECT_URI production
+printf "%s" "$REDIRECT" | vercel env add UPWORK_REDIRECT_URI preview
+printf "%s" "$REDIRECT" | vercel env add UPWORK_REDIRECT_URI development
+
+vercel env rm UPWORK_SCOPES -y >/dev/null 2>&1 || true
+printf "%s" "$UPWORK_SCOPES" | vercel env add UPWORK_SCOPES production
+printf "%s" "$UPWORK_SCOPES" | vercel env add UPWORK_SCOPES preview
+printf "%s" "$UPWORK_SCOPES" | vercel env add UPWORK_SCOPES development
+
+# 3) (Optional but recommended) Rotate Upwork API key in dashboard, then set the new pair:
+#    vercel env add UPWORK_CLIENT_ID production
+#    vercel env add UPWORK_CLIENT_SECRET production
+#    (repeat for preview/development)
+
+# 4) Redeploy production so new envs are active in lambdas
+vercel deploy --prod --force --confirm
+
+# 5) Sanity checks
+curl -sI https://notion-to-upwork.vercel.app/api/upwork/auth | head -n1
+curl -s https://notion-to-upwork.vercel.app/api/_netcheck | jq -r '.checks[] | "\(.url) -> \(.status // .error)"'
+
+# 6) Run a fresh OAuth (must use this new session; codes expire fast)
+open "https://notion-to-upwork.vercel.app/api/upwork/auth" || xdg-open "https://notion-to-upwork.vercel.app/api/upwork/auth"
+```
+
+---
+
+#### 🔍 Manual checklist (if error persists)
+1) **Redirect URI** in Upwork **exactly** equals `https://notion-to-upwork.vercel.app/api/upwork/callback` (no trailing slash).
+2) **Scopes** granted in the Upwork key include every token in `UPWORK_SCOPES` (remove extras or add missing ones).
+3) **Time** on your device is correct (large skew can cause code validation failures).
+4) Use a **fresh browser session** or private window when approving (prevents reusing stale code).
+5) If you rotated the key, **update all three** envs (production/preview/development) and redeploy.
+
+---
+
+#### 🧪 Expected outcomes
+- ✅ Callback returns `{ "ok": true, "saved": true }` and `_netcheck` shows `google=200`, `upwork=405`.
+- ❌ Still `invalid_grant` → capture the callback JSON and Upwork app settings (key id, scopes list, redirect) and report below.
+
+---
+
+#### 📝 Report
+```
+### [YYYY-MM-DD | @codex-report]
+Auth redirect: <HTTP/2 302 | not ok>
+_netcheck: <google=200, upwork=405, httpbin=503>
+Callback: <status + body>
+Upwork app: <redirect matches?>; <scopes delta?>; <key rotated Y/N>
+Outcome: <success | blocked + next action>
+```
+```
+````markdown
+### [2025-10-27 | @chatgpt → @codex] Upwork OAuth: remove `scope`, align redirect, redeploy, re‑auth (step‑by‑step)
+
+**Why:** Upwork does not accept a `scope` parameter in OAuth requests. Scopes/permissions are configured on the API key itself (“Application Permissions”). We will (1) remove `scope` from the auth route, (2) verify the redirect URI, (3) redeploy, and (4) run a clean authorization.
+
+---
+
+## 1) Confirm Upwork app settings (manual)
+1. Open **Upwork → API Center → Your App**.
+2. Verify the **Callback URL** exactly equals (no trailing slash):
+   ```
+   https://notion-to-upwork.vercel.app/api/upwork/callback
+   ```
+3. Review **Application Permissions** (informational; not passed in OAuth URL).
+
+---
+
+## 2) Clean environment in Vercel (manual)
+1. In **Vercel → Project → Settings → Environment Variables**, ensure:
+   - `UPWORK_CLIENT_ID` = your key
+   - `UPWORK_CLIENT_SECRET` = your secret
+   - `UPWORK_REDIRECT_URI` = `https://notion-to-upwork.vercel.app/api/upwork/callback`
+2. **Delete** any `UPWORK_SCOPE` / `UPWORK_SCOPES` entries if present.
+
+---
+
+## 3) Patch the auth route to remove `scope` and log the URL
+Create or edit `src/pages/api/upwork/auth.ts`:
+
+```ts
+import type { NextApiRequest, NextApiResponse } from "next";
+import crypto from "node:crypto";
+
+export default async function handler(_req: NextApiRequest, res: NextApiResponse) {
+  const client_id = process.env.UPWORK_CLIENT_ID!;
+  const redirect_uri = process.env.UPWORK_REDIRECT_URI!;
+  if (!client_id || !redirect_uri) {
+    return res.status(500).json({ ok: false, error: "Missing UPWORK_CLIENT_ID / UPWORK_REDIRECT_URI" });
+  }
+
+  const state = crypto.randomBytes(16).toString("hex");
+  const url = new URL("https://www.upwork.com/ab/account-security/oauth2/authorize");
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("client_id", client_id);
+  url.searchParams.set("redirect_uri", redirect_uri);
+  url.searchParams.set("state", state); // optional but recommended
+
+  console.log("[upwork/auth] redirecting to:", url.toString());
+  return res.redirect(302, url.toString());
+}
+```
+
+> Intentional: **no `scope` param**.
+
+---
+
+## 4) (Optional) Strict redirect check in callback
+In `src/pages/api/upwork/callback.ts`, before the exchange:
+
+```ts
+const redirect_uri = process.env.UPWORK_REDIRECT_URI!;
+if (!redirect_uri) return res.status(500).json({ ok:false, error:"Missing UPWORK_REDIRECT_URI" });
+```
+
+(Keep your existing token exchange + Supabase persistence in place.)
+
+---
+
+## 5) Commit & redeploy
+```bash
+git add src/pages/api/upwork/auth.ts src/pages/api/upwork/callback.ts
+git commit -m "oauth(upwork): remove scope from auth, verify redirect"
+git push origin main
+```
+
+---
+
+## 6) Production smoke checks
+```bash
+# Auth must return a 302 redirect
+curl -sI https://notion-to-upwork.vercel.app/api/upwork/auth | head -n1
+
+# Callback without code should complain (proves route exists + env loads)
+curl -s https://notion-to-upwork.vercel.app/api/upwork/callback | jq
+```
+
+---
+
+## 7) Clean authorization (fresh browser)
+1. Open a **private/incognito** window.
+2. Go to:
+   ```
+   https://notion-to-upwork.vercel.app/api/upwork/auth
+   ```
+3. Sign in to Upwork, **Authorize**, and let it redirect back to:
+   ```
+   /api/upwork/callback?code=...
+   ```
+4. Expected success:
+   ```
+   { "ok": true, "saved": true }
+   ```
+
+---
+
+## 8) If it still fails, triage quickly
+- **invalid_grant** → code was stale/used or `redirect_uri` mismatched. Repeat step 7 immediately and verify the registered callback equals `UPWORK_REDIRECT_URI` byte-for-byte.
+- **token_exchange_failed + status/body** → paste the full JSON from callback and a screenshot of your Upwork App settings (Callback URL + Application Permissions) below.
+
+---
+
+## 9) Report (append under 📊 Activity Feed)
+```
+### [YYYY-MM-DD | @codex-report]
+Auth HEAD: <302 line>
+Callback (no code): <response JSON>
+Callback (after approval): <final JSON>
+Outcome: <success | failing + brief reason>
+```
+````
