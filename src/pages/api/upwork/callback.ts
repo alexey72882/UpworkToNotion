@@ -1,9 +1,12 @@
+import type { NextApiRequest, NextApiResponse } from "next";
+import { saveTokens } from "@/lib/upworkToken";
+import https from "https";
+
 export const config = {
   runtime: "nodejs",
 };
 
-import type { NextApiRequest, NextApiResponse } from "next";
-import { saveTokens } from "@/lib/upworkToken";
+const agent = new https.Agent({ keepAlive: true });
 
 export default async function handler(
   req: NextApiRequest,
@@ -41,6 +44,8 @@ export default async function handler(
         code: String(code),
         redirect_uri,
       }),
+      // @ts-expect-error Node.js fetch (undici) supports the dispatcher option.
+      dispatcher: agent as any,
     });
 
     const data = await tokenRes.json().catch(() => ({}));
@@ -58,10 +63,12 @@ export default async function handler(
       scope: (data as any).scope,
     });
 
-    return res.status(200).json({ ok: true, source: "callback", saved: true });
+    return res.status(200).json({ ok: true, saved: true });
   } catch (e: unknown) {
-    const errorDetails =
-      typeof e === "object" ? JSON.stringify(e, null, 2) : String(e);
-    return res.status(500).json({ ok: false, error: errorDetails });
+    const message = e instanceof Error ? e.message : String(e);
+    return res.status(500).json({
+      ok: false,
+      error: message,
+    });
   }
 }
