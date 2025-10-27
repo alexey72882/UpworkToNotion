@@ -297,6 +297,11 @@ Outcome: <success | error + note>
 *(latest entries appear at the top)*
 
 ### [2025-10-27 | @codex-report]
+_netcheck: {"ok":true,"checks":[{"url":"https://httpbin.org/get","ok":false,"status":503,"timeMs":53},{"url":"https://www.google.com","ok":true,"status":200,"timeMs":71},{"url":"https://www.upwork.com/api/v3/oauth2/token","ok":false,"status":405,"timeMs":231}]}
+Callback: 502 {"ok":false,"error":"token_exchange_failed","details":{"error_description":"The provided authorization grant (e.g., authorization code, resource owner credentials) is invalid","error":"invalid_grant"}}
+Outcome: still failing — Upwork rejects authorization code; need valid OAuth approval
+
+### [2025-10-27 | @codex-report]
 Tokens table: pending (SQL committed; execution requires Supabase console)
 Callback: 400 {"ok":false,"error":"missing code"}
 Auto-refresh smoke test: not run (tokens unavailable without Upwork approval)
@@ -512,3 +517,111 @@ Outcome: waiting for valid grant
 ### [2025-10-27 | @codex-report]
 Callback error payload: 502 {"error":"invalid_grant","error_description":"The provided authorization grant (e.g., authorization code, resource owner credentials) is invalid"}
 Outcome: waiting for valid grant
+
+### [2025-10-27 | @chatgpt → @codex] Harden OAuth callback networking + add `_netcheck`
+**Goal:** Resolve `{"ok":false,"error":"fetch failed"}` by configuring Undici (Node fetch) and adding a simple outbound networking probe.
+
+---
+
+#### 1) Patch callback HTTP client (Undici) + keep Node runtime
+File: `src/pages/api/upwork/callback.ts` — add the dispatcher *once* near the imports and include a UA header on the Upwork request.
+
+```ts
+// NEW (top of file, after other imports)
+import { Agent, setGlobalDispatcher } from "undici";
+setGlobalDispatcher(new Agent({
+  keepAliveTimeout: 30_000,
+  keepAliveMaxTimeout: 60_000,
+  connect: { timeout: 10_000 }
+}));
+
+export const config = { runtime: "nodejs" }; // ensure Node runtime
+
+// ... inside the existing fetch to Upwork:
+const tokenRes = await fetch("https://www.upwork.com/api/v3/oauth2/token", {
+  method: "POST",
+  headers: {
+    Authorization: `Basic ${auth}`,
+    "Content-Type": "application/x-www-form-urlencoded",
+    "User-Agent": "notion-to-upwork/1.0 (+vercel)"
+  },
+  body: new URLSearchParams({
+    grant_type: "authorization_code",
+    code: String(code),
+    redirect_uri,
+  }),
+});
+```
+
+---
+
+#### 2) Add outbound network probe
+File: `src/pages/api/_netcheck.ts` — new file.
+
+```ts
+import type { NextApiRequest, NextApiResponse } from "next";
+export const config = { runtime: "nodejs" };
+
+async function tryFetch(url: string, init?: RequestInit) {
+  const started = Date.now();
+  try {
+    const r = await fetch(url, init);
+    return { url, ok: r.ok, status: r.status, timeMs: Date.now() - started };
+  } catch (e: any) {
+    return { url, ok: false, error: e?.message ?? String(e), timeMs: Date.now() - started };
+  }
+}
+
+export default async function handler(_: NextApiRequest, res: NextApiResponse) {
+  const checks = await Promise.all([
+    tryFetch("https://httpbin.org/get"),
+    tryFetch("https://www.google.com"),
+    tryFetch("https://www.upwork.com/api/v3/oauth2/token", { method: "HEAD" }),
+  ]);
+  res.status(200).json({ ok: true, checks });
+}
+```
+
+---
+
+#### 3) (If Upwork-only fails) pin region for callback
+Optionally force the callback to US‑East which tends to be the most reliable to Upwork. Add/merge on the callback export:
+
+```ts
+export const config = { runtime: "nodejs", regions: ["iad1"] };
+```
+> If you already export `config`, just add `regions: ["iad1"]` to it.
+
+---
+
+#### 4) Commit & deploy
+```bash
+git add -A
+git commit -m "fix(oauth): harden undici, add _netcheck, optional region pin for callback"
+git push origin main
+```
+
+---
+
+#### 5) Verify
+```bash
+# Auth should still redirect:
+curl -sI https://notion-to-upwork.vercel.app/api/upwork/auth | head -n1  # expect HTTP/2 302
+
+# Outbound network check:
+open "https://notion-to-upwork.vercel.app/api/_netcheck"
+
+# Complete browser OAuth and confirm callback:
+open "https://notion-to-upwork.vercel.app/api/upwork/auth"
+# Expect: { "ok": true, "saved": true }  (or a clear token_exchange_failed with details if the code is stale)
+```
+
+---
+
+#### 6) Report
+```
+### [YYYY-MM-DD | @codex-report]
+_netcheck: <paste JSON>
+Callback: <status + body>
+Outcome: <resolved | still failing + next idea>
+```
