@@ -56,8 +56,8 @@ export default async function handler(
 
     return res.status(200).json({ ok: true, source: "callback", saved: true });
   } catch (e: unknown) {
-    const message =
-      e instanceof Error ? e.message : typeof e === "string" ? e : String(e);
-    return res.status(500).json({ ok: false, error: message });
+    const errorDetails =
+      typeof e === "object" ? JSON.stringify(e, null, 2) : String(e);
+    return res.status(500).json({ ok: false, error: errorDetails });
   }
 }
