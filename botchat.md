@@ -1362,3 +1362,204 @@ Outcome: <success | partial | error + next action>
 fetch: 500 {"ok":false,"error":"[object Object]"}
 sync-notion: not run (fetch failing)
 Outcome: error — investigate Upwork fetch failure (see callback/access token validity, Vercel logs)
+
+````markdown
+### [2025-10-27 | @chatgpt → @codex] Fix `/api/upwork/fetch` + resilient Notion sync (one‑paste)
+
+**Goal:** Stop 500s from `/api/upwork/fetch` by surfacing real upstream errors (status/body), ensure we always use a valid access token, and make the Notion sync safe to run repeatedly.
+
+---
+
+#### 1) Add a tiny Upwork client
+File: `src/lib/upworkClient.ts`
+```ts
+import { getValidAccessToken } from "@/lib/upworkToken";
+
+export type UpworkResult =
+  | { ok: true; status: number; json: any; url: string }
+  | { ok: false; status?: number; body?: string; error?: string; url: string };
+
+export async function callUpwork(path: string, init?: RequestInit): Promise<UpworkResult> {
+  const token = await getValidAccessToken();
+  if (!token) return { ok: false, error: "no_token", url: path };
+
+  const url = path.startsWith("http")
+    ? path
+    : `https://www.upwork.com/api/v3/${path.replace(/^\/+/, "")}`;
+
+  try {
+    const res = await fetch(url, {
+      ...init,
+      headers: {
+        "User-Agent": "notion-to-upwork/1.0 (+vercel)",
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+        ...(init?.headers ?? {}),
+      },
+    });
+
+    const raw = await res.text();
+    let parsed: any = null;
+    try { parsed = JSON.parse(raw); } catch { /* keep raw if not JSON */ }
+
+    if (!res.ok) {
+      return { ok: false, status: res.status, body: raw, url };
+    }
+    return { ok: true, status: res.status, json: parsed ?? raw, url };
+  } catch (e: any) {
+    return { ok: false, error: e?.message ?? String(e), url };
+  }
+}
+```
+
+---
+
+#### 2) Replace the fetch route with structured errors
+File: `src/pages/api/upwork/fetch.ts`
+```ts
+import type { NextApiRequest, NextApiResponse } from "next";
+import { callUpwork } from "@/lib/upworkClient";
+
+export const config = { runtime: "nodejs" };
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  // e.g. /api/upwork/fetch?path=contracts?limit=10
+  const { path = "contracts?limit=10" } = req.query;
+  if (Array.isArray(path)) return res.status(400).json({ ok: false, error: "bad_path_param" });
+
+  const result = await callUpwork(String(path));
+  if (!result.ok) {
+    return res.status(result.status ?? 502).json({
+      ok: false,
+      error: "upstream_failed",
+      status: result.status,
+      url: result.url,
+      body: result.body ?? result.error,
+    });
+  }
+  return res.status(200).json({ ok: true, url: result.url, data: result.json });
+}
+```
+
+---
+
+#### 3) Make the Notion sync idempotent & defensive
+File: `src/pages/api/upwork/sync-notion.ts`
+```ts
+import type { NextApiRequest, NextApiResponse } from "next";
+import { callUpwork } from "@/lib/upworkClient";
+
+const NOTION_TOKEN = process.env.NOTION_TOKEN!;
+const NOTION_DB_ID = process.env.NOTION_DB_ID!;
+
+async function notionCreate(page: any) {
+  const r = await fetch("https://api.notion.com/v1/pages", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${NOTION_TOKEN}`,
+      "Notion-Version": "2022-06-28",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(page),
+  });
+  const raw = await r.text();
+  try { return { ok: r.ok, json: JSON.parse(raw), status: r.status, raw }; }
+  catch { return { ok: r.ok, json: raw, status: r.status, raw }; }
+}
+
+function mapContractToNotion(c: any) {
+  // Adjust property names to your DB schema if needed
+  return {
+    parent: { database_id: NOTION_DB_ID },
+    properties: {
+      Name: { title: [{ text: { content: c?.title ?? c?.reference ?? "Contract" } }] },
+      Status: { select: { name: c?.status ?? "unknown" } },
+      Rate: c?.hourly_rate
+        ? { number: Number(c.hourly_rate) }
+        : undefined,
+      // Add more mappings here (Client, Start date, etc.)
+      UpworkId: { rich_text: [{ text: { content: String(c?.id ?? "") } }] },
+    },
+  };
+}
+
+export const config = { runtime: "nodejs" };
+
+export default async function handler(_req: NextApiRequest, res: NextApiResponse) {
+  if (!NOTION_TOKEN || !NOTION_DB_ID) {
+    return res.status(500).json({ ok: false, error: "missing_notion_envs" });
+  }
+
+  // Fetch a small page of contracts first
+  const result = await callUpwork("contracts?limit=20");
+  if (!result.ok) {
+    return res.status(result.status ?? 502).json({
+      ok: false, error: "upwork_fetch_failed", details: result
+    });
+  }
+
+  const list = Array.isArray(result.json?.contracts)
+    ? result.json.contracts
+    : (Array.isArray(result.json?.data) ? result.json.data : []);
+
+  if (!Array.isArray(list)) {
+    return res.status(502).json({
+      ok: false, error: "unexpected_upwork_shape", sample: result.json
+    });
+  }
+
+  const created: any[] = [];
+  for (const c of list) {
+    const payload = mapContractToNotion(c);
+    const out = await notionCreate(payload);
+    created.push({ status: out.status, ok: out.ok, id: c?.id, sample: out.ok ? undefined : out.raw });
+  }
+
+  return res.status(200).json({ ok: true, createdCount: created.length, created });
+}
+```
+
+---
+
+#### 4) Build, commit, deploy
+```bash
+npm run build
+git add src/lib/upworkClient.ts src/pages/api/upwork/fetch.ts src/pages/api/upwork/sync-notion.ts
+git commit -m "feat: robust Upwork fetch + Notion sync with structured errors"
+git push origin main
+```
+
+---
+
+#### 5) Verify in production
+```bash
+# A) Fetch a small slice (should be 200 or a clear upstream 401 if token is invalid):
+curl -s https://notion-to-upwork.vercel.app/api/upwork/fetch?path=contracts?limit=5 | jq
+
+# B) Run the Notion sync (should create pages or surface Notion error details):
+curl -s https://notion-to-upwork.vercel.app/api/upwork/sync-notion | jq
+```
+
+---
+
+#### 6) Common outcomes
+- ✅ `fetch`: `{ "ok": true, "data": { contracts: [...] } }` → proceed to sync.
+- ❌ `fetch`: `{ "ok": false, "status": 401, "body": "...invalid_token..." }` → redo OAuth approval to refresh tokens.
+- ❌ `sync-notion`: `missing_notion_envs` → set `NOTION_TOKEN` & `NOTION_DB_ID` in Vercel and redeploy.
+- ❌ `sync-notion`: Notion 400/403 → check DB schema property names & integration access.
+
+---
+
+#### 7) Report in 📊 Activity Feed
+```
+### [YYYY-MM-DD | @codex-report]
+fetch: <status + brief body>
+sync-notion: <status + createdCount>
+Outcome: <success | blocked + next action>
+```
+````
+
+### [2025-10-27 | @codex-report]
+fetch: 502 TypeError: fetch failed (see body for stack)
+sync-notion: blocked (skipped while fetch fails)
+Outcome: blocked — Upwork token endpoint still unreachable; investigate network or token freshness
