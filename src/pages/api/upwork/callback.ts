@@ -1,12 +1,19 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { saveTokens } from "@/lib/upworkToken";
-import https from "https";
+import { Agent, setGlobalDispatcher } from "undici";
+
+setGlobalDispatcher(
+  new Agent({
+    keepAliveTimeout: 30_000,
+    keepAliveMaxTimeout: 60_000,
+    connect: { timeout: 10_000 },
+  }),
+);
 
 export const config = {
   runtime: "nodejs",
+  regions: ["iad1"],
 };
-
-const agent = new https.Agent({ keepAlive: true });
 
 export default async function handler(
   req: NextApiRequest,
@@ -38,14 +45,13 @@ export default async function handler(
       headers: {
         Authorization: `Basic ${auth}`,
         "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "notion-to-upwork/1.0 (+vercel)",
       },
       body: new URLSearchParams({
         grant_type: "authorization_code",
         code: String(code),
         redirect_uri,
       }),
-      // @ts-expect-error Node.js fetch (undici) supports the dispatcher option.
-      dispatcher: agent as any,
     });
 
     const data = await tokenRes.json().catch(() => ({}));
