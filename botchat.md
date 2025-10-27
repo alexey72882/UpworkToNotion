@@ -1220,3 +1220,145 @@ Callback (after approval): <final JSON>
 Outcome: <success | failing + brief reason>
 ```
 ````
+
+```md
+### [2025-10-27 | @chatgpt → @codex] Pipe Upwork data into Notion DB (single‑window)
+
+**Goal:** Use the stored Upwork OAuth token to fetch data and sync it into a Notion database. One paste, then verify in production.
+
+---
+
+#### 0) Env (verify / add in Vercel)
+- `NOTION_TOKEN` = your Notion internal integration secret
+- `NOTION_DB_ID` = target database id (the one that should list contracts)
+- Already present: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `UPWORK_CLIENT_ID`, `UPWORK_CLIENT_SECRET`, `UPWORK_REDIRECT_URI`
+
+> Ensure the Notion integration has **edit access** to the database.
+
+---
+
+#### 1) Create Upwork fetch route
+File: `src/pages/api/upwork/fetch.ts`
+```ts
+import type { NextApiRequest, NextApiResponse } from "next";
+import { getValidAccessToken } from "@/lib/upworkToken";
+
+export default async function handler(_req: NextApiRequest, res: NextApiResponse) {
+  try {
+    const access = await getValidAccessToken();
+    if (!access) return res.status(401).json({ ok: false, error: "no_token" });
+
+    // Example endpoint: list contracts (adjust as needed)
+    const r = await fetch("https://www.upwork.com/api/v3/contracts", {
+      headers: { Authorization: `Bearer ${access}` },
+    });
+    const data = await r.json();
+
+    return res.status(200).json({ ok: true, data });
+  } catch (e: any) {
+    return res.status(500).json({ ok: false, error: e?.message ?? String(e) });
+  }
+}
+```
+
+---
+
+#### 2) Create Notion sync route
+File: `src/pages/api/upwork/sync-notion.ts`
+```ts
+import type { NextApiRequest, NextApiResponse } from "next";
+import { Client } from "@notionhq/client";
+import { getValidAccessToken } from "@/lib/upworkToken";
+
+const notion = new Client({ auth: process.env.NOTION_TOKEN });
+const dbId = process.env.NOTION_DB_ID!;
+
+// Minimal property mapping for a contracts database with properties:
+// - Name (Title)
+// - Status (Select)
+// - Rate (Number)
+// Adjust to your DB property names as needed.
+async function upsertContractPage(c: any) {
+  return notion.pages.create({
+    parent: { database_id: dbId },
+    properties: {
+      Name: { title: [{ text: { content: c.title ?? c.reference ?? "Untitled Contract" } }] },
+      Status: c.status ? { select: { name: String(c.status) } } : undefined,
+      Rate: typeof c.hourly_rate === "number" ? { number: c.hourly_rate } : undefined,
+    },
+  });
+}
+
+export default async function handler(_req: NextApiRequest, res: NextApiResponse) {
+  try {
+    if (!process.env.NOTION_TOKEN || !dbId) {
+      return res.status(500).json({ ok: false, error: "Missing NOTION_TOKEN or NOTION_DB_ID" });
+    }
+
+    const access = await getValidAccessToken();
+    if (!access) return res.status(401).json({ ok: false, error: "no_token" });
+
+    const r = await fetch("https://www.upwork.com/api/v3/contracts", {
+      headers: { Authorization: `Bearer ${access}` },
+    });
+    const data = await r.json();
+
+    const items: any[] = (data?.results ?? data?.contracts ?? data?.items ?? []);
+    let created = 0;
+    for (const c of items) {
+      await upsertContractPage(c);
+      created++;
+    }
+
+    return res.status(200).json({ ok: true, created });
+  } catch (e: any) {
+    return res.status(500).json({ ok: false, error: e?.message ?? String(e) });
+  }
+}
+```
+
+---
+
+#### 3) Install Notion SDK (if not already)
+```bash
+npm i @notionhq/client
+```
+
+---
+
+#### 4) Commit & deploy
+```bash
+git add src/pages/api/upwork/fetch.ts src/pages/api/upwork/sync-notion.ts
+git commit -m "feat(upwork→notion): fetch Upwork data and sync to Notion DB"
+git push origin main
+```
+
+---
+
+#### 5) Verify in production
+```bash
+# Upwork fetch JSON
+curl -s https://notion-to-upwork.vercel.app/api/upwork/fetch | jq
+
+# Sync into Notion (creates pages)
+curl -s https://notion-to-upwork.vercel.app/api/upwork/sync-notion | jq
+```
+
+Expected:
+- `/api/upwork/fetch` → `{ "ok": true, "data": ... }`
+- `/api/upwork/sync-notion` → `{ "ok": true, "created": <N> }` and new rows appear in your Notion DB.
+
+---
+
+#### 6) Report (append under 📊 Activity Feed)
+```
+### [YYYY-MM-DD | @codex-report]
+fetch: <ok | error + snippet>
+sync-notion: <created N | error + message>
+Outcome: <success | partial | error + next action>
+```
+```
+### [2025-10-27 | @codex-report]
+fetch: 500 {"ok":false,"error":"[object Object]"}
+sync-notion: not run (fetch failing)
+Outcome: error — investigate Upwork fetch failure (see callback/access token validity, Vercel logs)
