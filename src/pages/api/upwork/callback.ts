@@ -1,18 +1,18 @@
+import { Agent, setGlobalDispatcher } from "undici";
+import dns from "node:dns";
 import type { NextApiRequest, NextApiResponse } from "next";
 import { saveTokens } from "@/lib/upworkToken";
-import { Agent, setGlobalDispatcher, setGlobalOrigin } from "undici";
-import dns from "node:dns";
 
+dns.setDefaultResultOrder("ipv4first");
 setGlobalDispatcher(
   new Agent({
+    connect: { timeout: 10_000 },
     keepAliveTimeout: 30_000,
     keepAliveMaxTimeout: 60_000,
-    connect: { timeout: 10_000 },
   }),
 );
 
-dns.setDefaultResultOrder("ipv4first");
-setGlobalOrigin("https://www.upwork.com");
+export const config = { runtime: "nodejs", regions: ["iad1"] };
 
 async function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -101,11 +101,6 @@ async function exchangeWithRetry(params: {
 
   return { ok: false, error: "unreachable", endpoint: "n/a" };
 }
-
-export const config = {
-  runtime: "nodejs",
-  regions: ["iad1"],
-};
 
 export default async function handler(
   req: NextApiRequest,
