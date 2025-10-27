@@ -4,11 +4,17 @@ export type UpworkResult =
   | { ok: true; status: number; json: any; url: string }
   | { ok: false; status?: number; body?: string; error?: string; url: string };
 
-export async function callUpwork(
-  path: string,
-  init?: RequestInit,
-): Promise<UpworkResult> {
-  const token = await getValidAccessToken();
+export async function callUpwork(path: string, init?: RequestInit): Promise<UpworkResult> {
+  let token: string | null = null;
+
+  try {
+    token = await getValidAccessToken();
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : typeof error === "string" ? error : String(error);
+    return { ok: false, error: message, url: path };
+  }
+
   if (!token) {
     return { ok: false, error: "no_token", url: path };
   }
