@@ -1,4 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from "next";
+import { saveTokens, type TokenPayload } from "@/lib/upworkToken";
 
 export default async function handler(
   req: NextApiRequest,
@@ -44,8 +45,30 @@ export default async function handler(
       return res.status(502).json({ ok: false, error: data });
     }
 
-    // TODO: persist { access_token, refresh_token, expires_in } to Supabase
-    return res.status(200).json({ ok: true, source: "callback", tokens: data });
+    const tokens = data as Partial<TokenPayload>;
+    if (
+      !tokens.access_token ||
+      !tokens.refresh_token ||
+      typeof tokens.expires_in === "undefined"
+    ) {
+      return res
+        .status(502)
+        .json({ ok: false, error: "Invalid token payload from Upwork" });
+    }
+
+    const expiresIn = Number(tokens.expires_in);
+    if (!Number.isFinite(expiresIn)) {
+      return res.status(502).json({ ok: false, error: "Invalid expires_in from Upwork" });
+    }
+
+    await saveTokens({
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token,
+      expires_in: expiresIn,
+      scope: typeof tokens.scope === "string" ? tokens.scope : undefined,
+    });
+
+    return res.status(200).json({ ok: true, source: "callback", saved: true });
   } catch (e: unknown) {
     const message =
       e instanceof Error ? e.message : typeof e === "string" ? e : "unknown error";
