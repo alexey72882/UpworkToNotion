@@ -302,6 +302,11 @@ Callback: 502 {"ok":false,"error":"token_exchange_failed","details":{"error_desc
 Outcome: still failing — Upwork rejects authorization code; need valid OAuth approval
 
 ### [2025-10-27 | @codex-report]
+Callback: 400 {"ok":false,"error":"token_exchange_failed","status":400,"endpoint":"https://www.upwork.com/api/v3/oauth2/token","body":"{\"error_description\":\"The provided authorization grant (e.g., authorization code, resource owner credentials) is invalid\",\"error\":\"invalid_grant\"}"}
+_netcheck: httpbin=200, google=200, upwork=405
+Outcome: still fetch failing due to invalid grant — require fresh OAuth approval
+
+### [2025-10-27 | @codex-report]
 Tokens table: pending (SQL committed; execution requires Supabase console)
 Callback: 400 {"ok":false,"error":"missing code"}
 Auto-refresh smoke test: not run (tokens unavailable without Upwork approval)
@@ -877,3 +882,70 @@ Outcome: <success | failing + next hypothesis>
 ### [2025-10-27 | @codex-report]
 Callback: 400 {"error":"token_exchange_failed","status":400,"endpoint":"https://www.upwork.com/api/v3/oauth2/token","body":{"error":"invalid_grant","error_description":"The provided authorization grant (e.g., authorization code, resource owner credentials) is invalid"}}
 Outcome: still failing — need fresh OAuth approval with valid code
+
+### [2025-10-27 | @chatgpt → @codex] Final network hardening: DNS cache + fallback domain verification
+
+**Goal:** Eliminate random `TypeError: fetch failed` by forcing stable DNS resolution and using a persistent Undici dispatcher.
+
+---
+
+#### 1) Edit `src/pages/api/upwork/callback.ts`
+Below your existing Undici import and dispatcher, add:
+
+```ts
+// DNS-stable global dispatcher (to prevent transient fetch failures)
+import { setGlobalOrigin, getGlobalDispatcher } from "undici";
+import dns from "node:dns";
+dns.setDefaultResultOrder("ipv4first");
+
+setGlobalOrigin("https://www.upwork.com"); // preferred
+const dispatcher = getGlobalDispatcher();
+```
+
+Then, before calling `fetch`, add a quick reachability check:
+
+```ts
+// Preflight connectivity probe
+try {
+  const probe = await fetch("https://api.upwork.com/api/v3/oauth2/token", { method: "HEAD" });
+  console.log("✅ Upwork reachable:", probe.status);
+} catch (e) {
+  console.warn("⚠️ Upwork preflight failed:", e);
+}
+```
+
+If that fails, your fallback inside `exchangeWithRetry` will automatically switch to `api.upwork.com`.
+
+---
+
+#### 2) Commit & push
+```bash
+git add src/pages/api/upwork/callback.ts
+git commit -m "fix(oauth): stabilize Undici dispatcher + DNS IPv4-first + preflight probe"
+git push origin main
+```
+
+---
+
+#### 3) Verify
+```bash
+# Confirm network readiness
+curl -s https://notion-to-upwork.vercel.app/api/_netcheck | jq
+
+# Then re-run browser OAuth
+open "https://notion-to-upwork.vercel.app/api/upwork/auth"
+```
+
+Expected:
+- ✅ `{ "ok": true, "saved": true }`
+- ❌ If not: `{ "ok": false, "error": "token_exchange_failed", "status": <code>, "endpoint": "api.upwork.com", ... }`
+
+---
+
+#### 4) Report
+```
+### [YYYY-MM-DD | @codex-report]
+Callback: <status + JSON>
+_netcheck: <summary>
+Outcome: <success | still fetch failed + note>
+```
