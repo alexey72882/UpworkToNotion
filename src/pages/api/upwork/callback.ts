@@ -40,7 +40,7 @@ export default async function handler(
 
     const auth = Buffer.from(`${client_id}:${client_secret}`).toString("base64");
 
-    const tokenRes = await fetch("https://www.upwork.com/api/v3/oauth2/token", {
+    const tokenResponse = await fetch("https://www.upwork.com/api/v3/oauth2/token", {
       method: "POST",
       headers: {
         Authorization: `Basic ${auth}`,
@@ -54,27 +54,48 @@ export default async function handler(
       }),
     });
 
-    const data = await tokenRes.json().catch(() => ({}));
-
-    if (!tokenRes.ok) {
-      return res
-        .status(502)
-        .json({ ok: false, error: "token_exchange_failed", details: data });
+    const rawBody = await tokenResponse.text();
+    let parsedBody: unknown = rawBody;
+    try {
+      parsedBody = JSON.parse(rawBody);
+    } catch {
+      // leave as text when JSON parsing fails
     }
 
+    if (!tokenResponse.ok) {
+      return res.status(tokenResponse.status).json({
+        ok: false,
+        error: "token_exchange_failed",
+        status: tokenResponse.status,
+        body: parsedBody,
+      });
+    }
+
+    const data = parsedBody as {
+      access_token: string;
+      refresh_token: string;
+      expires_in: number;
+      scope?: string;
+    };
+
     await saveTokens({
-      access_token: (data as any).access_token,
-      refresh_token: (data as any).refresh_token,
-      expires_in: (data as any).expires_in,
-      scope: (data as any).scope,
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+      expires_in: data.expires_in,
+      scope: data.scope,
     });
 
     return res.status(200).json({ ok: true, saved: true });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : String(e);
+    const details =
+      e && typeof e === "object" && !(e instanceof Error)
+        ? JSON.stringify(e)
+        : undefined;
     return res.status(500).json({
       ok: false,
       error: message,
+      details,
     });
   }
 }
