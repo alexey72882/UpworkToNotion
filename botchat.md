@@ -949,3 +949,74 @@ Callback: <status + JSON>
 _netcheck: <summary>
 Outcome: <success | still fetch failed + note>
 ```
+
+### [2025-10-27 | @chatgpt → @codex] Network stabilization patch v2 — fix "TypeError: fetch failed"
+
+**Goal:** Resolve remaining network instability during Upwork token exchange by ensuring Undici’s dispatcher and DNS configuration are applied globally before the callback executes.
+
+---
+
+#### 1) Edit `src/pages/api/upwork/callback.ts`
+Place this block at the very top of the file (above all imports or handler functions):
+
+```ts
+// --- Global Undici configuration (fixes TypeError: fetch failed)
+import { Agent, setGlobalDispatcher } from "undici";
+import dns from "node:dns";
+
+dns.setDefaultResultOrder("ipv4first");
+setGlobalDispatcher(new Agent({
+  connect: { timeout: 10_000 },
+  keepAliveTimeout: 30_000,
+  keepAliveMaxTimeout: 60_000,
+}));
+
+export const config = { runtime: "nodejs", regions: ["iad1"] }; // ensure Node.js runtime on US-East
+```
+
+Then, just before the `fetch` call to Upwork’s token endpoint, add:
+
+```ts
+try {
+  const ping = await fetch("https://api.upwork.com/api/v3/oauth2/token", { method: "HEAD" });
+  console.log("✅ Upwork reachable, status:", ping.status);
+} catch (e) {
+  console.warn("⚠️ Upwork preflight failed:", e);
+}
+```
+
+---
+
+#### 2) Commit & push
+```bash
+git add src/pages/api/upwork/callback.ts
+git commit -m "fix(oauth): stabilize Undici global dispatcher + IPv4-first DNS + preflight check"
+git push origin main
+```
+
+---
+
+#### 3) Verify deployment
+```bash
+curl -sI https://notion-to-upwork.vercel.app/api/upwork/auth | head -n1
+curl -s https://notion-to-upwork.vercel.app/api/_netcheck | jq
+open "https://notion-to-upwork.vercel.app/api/upwork/auth"
+```
+
+Expected results:
+- ✅ `{ "ok": true, "saved": true }` → success
+- ❌ `{ "ok": false, "error": "token_exchange_failed", "status": <code>, "endpoint": "api.upwork.com", ... }` → still valid but upstream OAuth denial
+
+---
+
+#### 4) Report
+```
+### [YYYY-MM-DD | @codex-report]
+Callback: <status + JSON>
+_netcheck: <summary>
+Outcome: <success | still fetch failed + note>
+```
+### [2025-10-27 | @codex-report]
+Callback: 400 {"error":"token_exchange_failed","status":400,"endpoint":"https://www.upwork.com/api/v3/oauth2/token","body":"{\"error_description\":\"The provided authorization grant (e.g., authorization code, resource owner credentials) is invalid\",\"error\":\"invalid_grant\"}"}
+_netcheck: httpbin=503, google=200, upwork=405
+Outcome: still failing — OAuth approval required with fresh code
