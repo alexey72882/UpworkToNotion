@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { saveTokens } from "@/lib/upworkToken";
-import { Agent, setGlobalDispatcher } from "undici";
+import { Agent, setGlobalDispatcher, setGlobalOrigin } from "undici";
+import dns from "node:dns";
 
 setGlobalDispatcher(
   new Agent({
@@ -9,6 +10,9 @@ setGlobalDispatcher(
     connect: { timeout: 10_000 },
   }),
 );
+
+dns.setDefaultResultOrder("ipv4first");
+setGlobalOrigin("https://www.upwork.com");
 
 async function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -127,6 +131,15 @@ export default async function handler(
     }
 
     const authB64 = Buffer.from(`${client_id}:${client_secret}`).toString("base64");
+
+    try {
+      const probe = await fetch("https://api.upwork.com/api/v3/oauth2/token", {
+        method: "HEAD",
+      });
+      console.log("✅ Upwork reachable:", probe.status);
+    } catch (probeError) {
+      console.warn("⚠️ Upwork preflight failed:", probeError);
+    }
 
     const result = await exchangeWithRetry({
       authB64,
