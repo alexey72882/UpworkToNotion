@@ -160,14 +160,28 @@ export default async function handler(
       scope?: string;
     };
 
-    await saveTokens({
-      access_token: data.access_token,
-      refresh_token: data.refresh_token,
-      expires_in: data.expires_in,
-      scope: data.scope,
-    });
-
-    return res.status(200).json({ ok: true, saved: true, endpoint: result.endpoint });
+    try {
+      await saveTokens({
+        access_token: data.access_token,
+        refresh_token: data.refresh_token,
+        expires_in: data.expires_in,
+        scope: data.scope,
+      });
+      return res.status(200).json({ ok: true, saved: true, endpoint: result.endpoint });
+    } catch (saveError) {
+      const supabaseMessage =
+        saveError instanceof Error
+          ? saveError.message
+          : typeof saveError === "string"
+          ? saveError
+          : JSON.stringify(saveError);
+      return res.status(200).json({
+        ok: true,
+        saved: false,
+        endpoint: result.endpoint,
+        supabase_error: supabaseMessage,
+      });
+    }
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : String(e);
     const details =
