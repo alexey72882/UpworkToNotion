@@ -1729,3 +1729,100 @@ Callback: <status + JSON>
 Outcome: <success | still failing + brief reason>
 ```
 ```
+### [2025-10-28 | @chatgpt → @codex] Switch Upwork data layer to GraphQL (create proxy + verify)
+
+**Goal:** Replace failing REST v3 calls with Upwork GraphQL. Add a `/api/upwork/gql` proxy that forwards queries using our stored OAuth token, then verify with simple queries.
+
+---
+
+#### 1) Create file: `src/pages/api/upwork/gql.ts`
+```ts
+import type { NextApiRequest, NextApiResponse } from "next";
+import { getValidAccessToken } from "@/lib/upworkToken";
+
+export const config = { runtime: "nodejs" };
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== "POST") {
+    return res.status(405).json({ ok: false, error: "use POST with {query, variables}" });
+  }
+  const token = await getValidAccessToken();
+  if (!token) return res.status(401).json({ ok: false, error: "no_token" });
+
+  const upstream = await fetch("https://www.upwork.com/api/graphql", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      query: req.body?.query,
+      variables: req.body?.variables ?? {},
+    }),
+  });
+
+  const text = await upstream.text();
+  try {
+    const json = JSON.parse(text);
+    return res.status(upstream.ok ? 200 : upstream.status).json({ ok: upstream.ok, data: json });
+  } catch {
+    return res.status(upstream.ok ? 200 : upstream.status).json({ ok: upstream.ok, raw: text });
+  }
+}
+```
+
+---
+
+#### 2) Commit & deploy
+```bash
+git add src/pages/api/upwork/gql.ts
+git commit -m "feat(upwork): GraphQL proxy route"
+git push origin main
+```
+
+---
+
+#### 3) Verify in production (sanity, then real data)
+```bash
+# Sanity: GraphQL ping
+curl -s https://notion-to-upwork.vercel.app/api/upwork/gql \
+  -H "Content-Type: application/json" \
+  -d '{"query":"query{ __typename }"}' | jq
+
+# Viewer info (adjust to your app permissions)
+curl -s https://notion-to-upwork.vercel.app/api/upwork/gql \
+  -H "Content-Type: application/json" \
+  -d '{"query":"query MyViewer { viewer { id name } }"}' | jq
+```
+
+Expected:
+- First call returns `{"ok":true, "data":{"data":{"__typename":"Query"}} ... }`
+- Second call returns viewer fields if permitted; otherwise GraphQL errors describe missing permission/field.
+
+---
+
+#### 4) Optional: example queries to explore
+_Execute one at a time; keep as POST to `/api/upwork/gql` with `{"query":"..."}`_  
+- `query { viewer { id name } }`  
+- `query { rooms(first:10) { nodes { id title createdAt } } }`  
+- `query { messages(first:10) { nodes { id text room { id title } createdAt } } }`
+
+---
+
+#### 5) (Later) Replace Notion sync to use GraphQL
+- Swap any calls to `/api/upwork/fetch?...` with a POST to `/api/upwork/gql` and map the returned GraphQL shapes to Notion properties.
+- Keep existing Notion envs (`NOTION_TOKEN`, `NOTION_DB_ID`) and the `getValidAccessToken` flow unchanged.
+
+---
+
+#### 6) Report
+```
+### [YYYY-MM-DD | @codex-report]
+gql ping: <status + brief JSON>
+viewer query: <status + brief JSON or error>
+Outcome: <success | blocked + message>
+```
+### [2025-10-28 | @codex-report]
+gql ping: 405 (route not yet available)
+viewer query: not run
+Outcome: blocked — need deployment to expose /api/upwork/gql (still returning 405)
