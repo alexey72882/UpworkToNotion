@@ -1836,3 +1836,8 @@ Outcome: blocked — Upwork GraphQL endpoint responded 404; may require addition
 gql ping: 404 (Upwork returned HTML 404 page even after switching endpoint)
 viewer query: not attempted (ping failing)
 Outcome: blocked — Upwork GraphQL still not accessible; may require different auth headers or plan level
+
+### [2025-10-28 | @codex-report]
+GraphQL ping: 200 {"ok":true,"data":{"__typename":"Query"}}
+Viewer: 200 validation error (field undefined)
+Outcome: success — proxy works; viewer field unavailable with current permissions
