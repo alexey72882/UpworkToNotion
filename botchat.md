@@ -1831,3 +1831,8 @@ Outcome: blocked — need deployment to expose /api/upwork/gql (still returning 
 gql POST __typename: 404 (Upwork returned HTML 404 page)
 viewer query: not attempted (blocked by 404)
 Outcome: blocked — Upwork GraphQL endpoint responded 404; may require additional headers or different endpoint
+
+### [2025-10-28 | @codex-report]
+gql ping: 404 (Upwork returned HTML 404 page even after switching endpoint)
+viewer query: not attempted (ping failing)
+Outcome: blocked — Upwork GraphQL still not accessible; may require different auth headers or plan level
