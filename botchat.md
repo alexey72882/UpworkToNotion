@@ -1841,3 +1841,9 @@ Outcome: blocked — Upwork GraphQL still not accessible; may require different 
 GraphQL ping: 200 {"ok":true,"data":{"__typename":"Query"}}
 Viewer: 200 validation error (field undefined)
 Outcome: success — proxy works; viewer field unavailable with current permissions
+
+### [2025-10-28 | @codex-report]
+gql rooms: 200 validation error (Field "rooms" undefined)
+gql messages: 200 validation error (Field "messages" undefined)
+notion mapping: DB ready? pending (need property alignment)
+Outcome: blocked — Upwork app lacks access to rooms/messages GraphQL fields; adjust permissions before wiring Notion
