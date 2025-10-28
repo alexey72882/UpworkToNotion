@@ -1563,3 +1563,169 @@ Outcome: <success | blocked + next action>
 fetch: 502 TypeError: fetch failed (see body for stack)
 sync-notion: blocked (skipped while fetch fails)
 Outcome: blocked — Upwork token endpoint still unreachable; investigate network or token freshness
+
+
+### [2025-10-27 | @chatgpt → @codex] Finished working — Upwork client + Notion sync deployment summary
+
+Implemented a reusable Upwork client to surface upstream failures, rewrote `/api/upwork/fetch` and `/api/upwork/sync-notion` around it, and deployed the changes.  
+The new helper (`src/lib/upworkClient.ts`) wraps token retrieval, builds the v3 endpoint URL, and returns structured `{ status, body }` data even on network errors.
+
+`/api/upwork/fetch` (`src/pages/api/upwork/fetch.ts`) now accepts a `path` query, catches every exception, and returns `upstream_failed` responses with both the failing URL and the raw body/error details.  
+`/api/upwork/sync-notion` (`src/pages/api/upwork/sync-notion.ts`) uses the helper to pull contracts, maps each item into Notion-friendly properties, posts via the Notion REST API, and reports each page creation status.
+
+Production smoke tests were attempted after the deploy:
+
+- `curl https://notion-to-upwork.vercel.app/api/upwork/fetch?path=contracts?limit=5` → **502** with `body` containing `TypeError: fetch failed` (full stack recorded in `botchat.md`).
+- Sync route not run while fetch is failing.
+
+`botchat.md` has two new entries noting the structured error and that sync remains blocked until the Upwork token endpoint becomes reachable again.
+
+#### Next steps
+1. Check Vercel’s logs for `/api/upwork/fetch` to confirm whether the `fetch failed` is a transient Upwork outage or a regional networking issue.
+2. If the Upwork token has expired, re‑authorize; then retry the fetch and, once it returns 200, run `/api/upwork/sync‑notion` to push into Notion.
+### [2025-10-28 | @chatgpt → @codex] Callback 500s: guard Supabase write, verify envs, redeploy, re-auth
+```md
+**Goal:** Prevent 500 errors in the OAuth callback by guarding Supabase persistence, verifying Supabase credentials, redeploying, and re-running OAuth.
+
+---
+#### 1) Patch the callback to protect `saveTokens`
+In `src/pages/api/upwork/callback.ts`, wrap the persistence call so Supabase cannot crash the route:
+```ts
+try {
+  await saveTokens({
+    access_token: data.access_token,
+    refresh_token: data.refresh_token,
+    expires_in: data.expires_in,
+    scope: data.scope,
+  });
+  return res.status(200).json({ ok: true, saved: true });
+} catch (e: any) {
+  return res.status(200).json({
+    ok: true,
+    saved: false,
+    supabase_error: e?.message ?? String(e),
+  });
+}
+```
+
+---
+#### 2) Verify Supabase envs in Vercel
+In Vercel → Settings → Environment Variables, confirm:
+- `SUPABASE_URL` = `https://<your-project>.supabase.co`
+- `SUPABASE_SERVICE_ROLE_KEY` = your **Service Role** key (not anon/public)
+- `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` have no “temp” prefixes
+- Redeploy after editing these.
+
+---
+#### 3) Redeploy and retest
+```bash
+git add src/pages/api/upwork/callback.ts
+git commit -m "fix(oauth): guard Supabase persistence and verify envs"
+git push origin main
+vercel deploy --prod --force --confirm
+```
+
+Then open a fresh OAuth flow:
+```
+https://notion-to-upwork.vercel.app/api/upwork/auth
+```
+
+Expected callback results:
+- ✅ `{ "ok": true, "saved": true }` — success  
+- ⚠️ `{ "ok": true, "saved": false, "supabase_error": "..." }` — Supabase misconfiguration
+- ❌ `{ "ok": false, "error": "token_exchange_failed" }` — OAuth or network issue
+
+---
+#### 4) If still failing:
+- Check Vercel logs for `/api/upwork/callback` errors mentioning `TypeError: fetch failed`.
+- Run `_netcheck`:  
+  `curl -s https://notion-to-upwork.vercel.app/api/_netcheck | jq`
+- Confirm Supabase key works manually:
+  ```bash
+  curl -s -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" "$SUPABASE_URL/rest/v1/"
+  ```
+
+---
+#### 5) Report
+```
+### [YYYY-MM-DD | @codex-report]
+Callback JSON: <paste>
+Supabase: <ok | error + reason>
+Outcome: <success | still failing + note>
+```
+```
+### [2025-10-28 | @chatgpt → @codex] Fix Supabase envs in Vercel → redeploy → re-run OAuth
+```md
+### [@chatgpt → @codex] Fix Supabase envs in Vercel, redeploy, and re-test OAuth callback
+
+**Reason:** OAuth callback is failing with `fetch failed` due to `TEMP_SUPABASE_URL` and/or `TEMP_SUPABASE_SERVICE_ROLE_KEY` placeholders in Vercel environment variables. These must be replaced with your real Supabase project URL and Service Role key for persistence and connectivity.
+
+---
+
+#### 1) Identify and replace temporary Supabase environment variables
+In **Vercel → Project → Settings → Environment Variables**, look for any of:
+- `SUPABASE_URL` (should be like `https://<project>.supabase.co`)
+- `SUPABASE_SERVICE_ROLE_KEY` (should be a long JWT, not start with `TEMP_`)
+
+If either value starts with `TEMP_` or is a placeholder, replace with your real Supabase project credentials:
+1. Get your Supabase project URL and Service Role key from **Supabase → Project Settings → API**.
+2. In Vercel, delete any `TEMP_...` envs.
+3. Add the real values for all three environments (production, preview, development):
+   ```bash
+   vercel env add SUPABASE_URL production
+   vercel env add SUPABASE_URL preview
+   vercel env add SUPABASE_URL development
+   vercel env add SUPABASE_SERVICE_ROLE_KEY production
+   vercel env add SUPABASE_SERVICE_ROLE_KEY preview
+   vercel env add SUPABASE_SERVICE_ROLE_KEY development
+   ```
+   (Paste the values when prompted.)
+
+---
+
+#### 2) Confirm the envs are correct
+List all relevant envs and check for correctness:
+```bash
+vercel env ls | grep -i 'SUPABASE'
+```
+You should see your real project URL and a non-placeholder Service Role key for each environment.
+
+Test connectivity to Supabase (replace with your values if running locally):
+```bash
+curl -s -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" "$SUPABASE_URL/rest/v1/" | head -c 200
+```
+You should get a JSON response (not an error or HTML).
+
+---
+
+#### 3) Redeploy to apply new envs
+```bash
+vercel deploy --prod --force --confirm
+```
+Wait for deployment to complete.
+
+---
+
+#### 4) Re-run OAuth callback and verify success
+1. In a fresh browser/private window, open:
+   ```
+   https://notion-to-upwork.vercel.app/api/upwork/auth
+   ```
+2. Complete the Upwork authorization flow.
+3. The callback endpoint should now return:
+   ```
+   { "ok": true, "saved": true }
+   ```
+   If you see `{ "ok": true, "saved": false, "supabase_error": ... }`, check the error message for Supabase issues.
+
+---
+
+#### 5) Report below
+```
+### [YYYY-MM-DD | @codex-report]
+Supabase envs: <set correctly | TEMP_ found | error>
+Env check: <curl output or vercel env ls output>
+Callback: <status + JSON>
+Outcome: <success | still failing + brief reason>
+```
+```
