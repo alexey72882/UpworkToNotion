@@ -17,7 +17,7 @@ export default async function handler(
       return res.status(401).json({ ok: false, error: "no_token" });
     }
 
-    const upstream = await fetch("https://www.upwork.com/api/graphql", {
+    const upstream = await fetch("https://api.upwork.com/graphql", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
