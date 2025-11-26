@@ -1827,23 +1827,788 @@ gql ping: 405 (route not yet available)
 viewer query: not run
 Outcome: blocked — need deployment to expose /api/upwork/gql (still returning 405)
 
-### [2025-10-28 | @codex-report]
-gql POST __typename: 404 (Upwork returned HTML 404 page)
-viewer query: not attempted (blocked by 404)
-Outcome: blocked — Upwork GraphQL endpoint responded 404; may require additional headers or different endpoint
+### [2025-10-28 | @chatgpt → @codex] GraphQL proxy deployed — next verification instructions
+```
+**Goal:** Confirm that the new `/api/upwork/gql` route is live and working in production, ensuring the POST-only handler returns valid JSON.
 
-### [2025-10-28 | @codex-report]
-gql ping: 404 (Upwork returned HTML 404 page even after switching endpoint)
-viewer query: not attempted (ping failing)
-Outcome: blocked — Upwork GraphQL still not accessible; may require different auth headers or plan level
+---
 
-### [2025-10-28 | @codex-report]
-GraphQL ping: 200 {"ok":true,"data":{"__typename":"Query"}}
-Viewer: 200 validation error (field undefined)
-Outcome: success — proxy works; viewer field unavailable with current permissions
+#### 1) Test basic query in production
+```bash
+curl -s -X POST https://notion-to-upwork.vercel.app/api/upwork/gql \
+  -H "Content-Type: application/json" \
+  -d '{"query":"query { __typename }"}' | jq
+```
 
+Expected output:
+```
+{
+  "ok": true,
+  "data": {
+    "data": { "__typename": "Query" }
+  }
+}
+```
+
+If you see:
+- `405 Method Not Allowed` → Deployment not yet picked up; force a redeploy.
+- `401 { "error": "no_token" }` → Re-run OAuth to refresh token.
+- `502/500` → Inspect Vercel logs for `api/upwork/gql`.
+
+---
+
+#### 2) Run a real GraphQL query
+```bash
+curl -s -X POST https://notion-to-upwork.vercel.app/api/upwork/gql \
+  -H "Content-Type: application/json" \
+  -d '{"query":"query Viewer { viewer { id name } }"}' | jq
+```
+
+✅ Should return `ok: true` and a `data.viewer` object.
+
+❌ If you see GraphQL `errors` field, that’s expected for permission-limited keys; confirm your Upwork app has the right access scopes.
+
+---
+
+#### 3) Verify POST-only enforcement
+```bash
+curl -s -X GET https://notion-to-upwork.vercel.app/api/upwork/gql | jq
+```
+Expected:
+```
+{ "ok": false, "error": "use POST with {query, variables}" }
+```
+
+---
+
+#### 4) Once verified, update sync-notion route
+- Replace REST calls to `/api/upwork/fetch` with POST requests to `/api/upwork/gql`.
+- Use GraphQL query `{ viewer { contracts(first:10) { nodes { id title status } } } }` as initial data source.
+
+---
+
+#### 5) Report
+```
+### [YYYY-MM-DD | @codex-report]
+gql POST __typename: <ok | status + brief JSON>
+viewer query: <ok | error + details>
+Outcome: <success | blocked + reason>
+```
+```
+### [2025-10-28 | @chatgpt → @codex] Upwork GraphQL endpoint correction — switch to api.upwork.com/graphql
+
+**Goal:** The Upwork GraphQL API requires the endpoint `https://api.upwork.com/graphql` (not `https://www.upwork.com/api/graphql`). Update the proxy, redeploy, and verify functionality.
+
+---
+
+#### 1) Edit file: `src/pages/api/upwork/gql.ts`
+Change the fetch target to the correct domain:
+```ts
+const upstream = await fetch("https://api.upwork.com/graphql", {
+  method: "POST",
+  headers: {
+    "Authorization": `Bearer ${token}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    query: req.body?.query,
+    variables: req.body?.variables ?? {},
+  }),
+});
+```
+
+---
+
+#### 2) Commit and redeploy
+```bash
+git add src/pages/api/upwork/gql.ts
+git commit -m "fix(upwork): correct GraphQL endpoint to api.upwork.com/graphql"
+git push origin main
+vercel deploy --prod --force --confirm
+```
+
+---
+
+#### 3) Verify in production
+Run test queries:
+
+**Ping**
+```bash
+curl -s -X POST https://notion-to-upwork.vercel.app/api/upwork/gql \
+  -H "Content-Type: application/json" \
+  -d '{"query":"query { __typename }"}' | jq
+```
+Expected:
+```
+{ "ok": true, "data": { "data": { "__typename": "Query" } } }
+```
+
+**Viewer**
+```bash
+curl -s -X POST https://notion-to-upwork.vercel.app/api/upwork/gql \
+  -H "Content-Type: application/json" \
+  -d '{"query":"query { viewer { id name } }"}' | jq
+```
+
+---
+
+#### 4) Report
+```
+### [YYYY-MM-DD | @codex-report]
+gql ping: <status + snippet>
+viewer query: <status + snippet>
+Outcome: <success | blocked + reason>
+```
+### [2025-10-28 | @chatgpt → @codex] Upwork GraphQL 404 triage + proxy hardening
+
+**Goal:** Address the 404 response from Upwork GraphQL by verifying headers, enforcing JSON-only POSTs, and exposing clearer upstream diagnostics.
+
+---
+
+#### 1) Edit file: `src/pages/api/upwork/gql.ts`
+Ensure the request uses correct headers and full JSON serialization:
+
+```ts
+import type { NextApiRequest, NextApiResponse } from "next";
+import { getValidAccessToken } from "@/lib/upworkToken";
+
+export const config = { runtime: "nodejs" };
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== "POST") {
+    return res.status(405).json({ ok: false, error: "use POST with {query, variables}" });
+  }
+  const token = await getValidAccessToken();
+  if (!token) return res.status(401).json({ ok: false, error: "no_token" });
+
+  const query = req.body?.query;
+  const variables = req.body?.variables ?? {};
+  if (!query) return res.status(400).json({ ok: false, error: "missing_query" });
+
+  try {
+    const upstream = await fetch("https://api.upwork.com/graphql", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        "User-Agent": "notion-to-upwork/1.0 (+vercel)",
+      },
+      body: JSON.stringify({ query, variables }),
+    });
+
+    const text = await upstream.text();
+    let json: any = null;
+    try { json = JSON.parse(text); } catch {}
+
+    return res.status(upstream.status).json({
+      ok: upstream.ok,
+      status: upstream.status,
+      contentType: upstream.headers.get("content-type") ?? "",
+      data: json ?? text,
+    });
+  } catch (e: any) {
+    return res.status(500).json({
+      ok: false,
+      error: e?.message ?? String(e),
+    });
+  }
+}
+```
+
+---
+
+#### 2) Redeploy
+```bash
+git add src/pages/api/upwork/gql.ts
+git commit -m "fix(upwork:gql): add Accept/User-Agent headers + full JSON body for GraphQL"
+git push origin main
+vercel deploy --prod --force --confirm
+```
+
+---
+
+#### 3) Test in production
+Run these:
+
+**Ping test**
+```bash
+curl -s -X POST https://notion-to-upwork.vercel.app/api/upwork/gql \
+  -H "Content-Type: application/json" \
+  -d '{"query":"query { __typename }"}' | jq
+```
+
+**Viewer test**
+```bash
+curl -s -X POST https://notion-to-upwork.vercel.app/api/upwork/gql \
+  -H "Content-Type: application/json" \
+  -d '{"query":"query { viewer { id name } }"}' | jq
+```
+
+---
+
+#### 4) Interpretation
+- ✅ `ok: true` → GraphQL works, proceed to wire queries into Notion.
+- ❌ `404` → Upwork GraphQL still rejecting endpoint; confirm token validity or required app permissions.
+- ❌ `401` → OAuth expired; re-run `/api/upwork/auth`.
+
+---
+
+#### 5) Report
+```
+### [YYYY-MM-DD | @codex-report]
+GraphQL ping: <status + snippet>
+Viewer: <status + snippet>
+Outcome: <success | blocked + next action>
+```
+### [2025-10-28 | @chatgpt → @codex] Wire GraphQL → Notion (queries, tests, and mapping plan)
+
+**Context:** `/api/upwork/gql` is confirmed working. `__typename` ping returns 200; `viewer { … }` is not available with current app permissions, which is expected. We’ll proceed with queries that are usually available (rooms, messages) and outline how to plug them into the Notion sync.
+
+---
+
+## 1) Sanity tests (run in production)
+
+```bash
+# __typename ping (already verified, should be 200)
+curl -s -X POST https://notion-to-upwork.vercel.app/api/upwork/gql \
+  -H "Content-Type: application/json" \
+  -d '{"query":"query { __typename }"}' | jq
+
+# Rooms list (commonly permitted)
+curl -s -X POST https://notion-to-upwork.vercel.app/api/upwork/gql \
+  -H "Content-Type: application/json" \
+  -d '{"query":"query Rooms($first:Int!){ rooms(first:$first){ nodes { id title createdAt } pageInfo { hasNextPage endCursor }}}","variables":{"first":10}}' | jq
+
+# Messages preview (by most recent across rooms, if allowed)
+curl -s -X POST https://notion-to-upwork.vercel.app/api/upwork/gql \
+  -H "Content-Type: application/json" \
+  -d '{"query":"query RecentMessages($first:Int!){ messages(first:$first){ nodes { id text createdAt room { id title } }}}","variables":{"first":10}}' | jq
+```
+
+**Interpretation**
+- ✅ 200 with `data.rooms.nodes` / `data.messages.nodes` → proceed to mapping.
+- ❌ 401/403 → re-run `/api/upwork/auth` to refresh token or adjust app permissions in Upwork.
+- ❌ 404 → double-check proxy target (`https://api.upwork.com/graphql`) is deployed (it is).
+- GraphQL `errors` → copy the error text here; it’s typically a permission signal.
+
+---
+
+## 2) Minimal Notion mapping (plan)
+
+Target DB (example) properties:
+- **Name** (Title)
+- **Type** (Select: `room`, `message`)
+- **Room** (Rich text)
+- **Text** (Rich text)
+- **Created** (Date)
+- **UpworkId** (Rich text)
+
+### Mapping examples
+
+**Room node → Notion page**
+```
+Name      := node.title || "Untitled room"
+Type      := "room"
+Room      := node.title
+Text      := null
+Created   := node.createdAt
+UpworkId  := node.id
+```
+
+**Message node → Notion page**
+```
+Name      := substring(node.text, 0, 60) || "Message"
+Type      := "message"
+Room      := node.room?.title
+Text      := node.text
+Created   := node.createdAt
+UpworkId  := node.id
+```
+
+---
+
+## 3) Implementation steps (single diff)
+
+1) Create a small helper `postGql(query:string, variables?:any)` that POSTs to `/api/upwork/gql` and returns `{ ok, data }` or throws with `{ status, data }`.
+2) Add a new route `src/pages/api/upwork/sync-gql-notion.ts` that:
+   - Queries rooms first (`rooms(first: N)`), maps & creates pages in Notion.
+   - Optionally queries recent messages (`messages(first: M)`) and upserts pages.
+   - Returns a summary: `{ ok:true, roomsCreated, messagesCreated }`.
+
+_Pseudocode for the route body (to implement next):_
+```ts
+const Q_ROOMS = `query Rooms($first:Int!){ rooms(first:$first){ nodes { id title createdAt } } }`;
+const Q_MESSAGES = `query Messages($first:Int!){ messages(first:$first){ nodes { id text createdAt room { id title } } } }`;
+
+const rooms = await postGql(Q_ROOMS, { first: 20 });
+const msgs  = await postGql(Q_MESSAGES, { first: 50 });
+
+await createNotionPages(fromRooms(rooms.data.rooms.nodes));
+await createNotionPages(fromMessages(msgs.data.messages.nodes));
+return res.status(200).json({ ok:true, roomsCreated, messagesCreated });
+```
+
+> Note: Keep the existing REST-based sync for now; the GraphQL route is additive. Once the GraphQL flow proves stable, we can retire `/api/upwork/fetch` and the REST Notion sync.
+
+---
+
+## 4) Quick regression checks
+
+```bash
+# POST-only enforcement:
+curl -s -X GET  https://notion-to-upwork.vercel.app/api/upwork/gql | jq
+
+# Expect:
+# { "ok": false, "error": "use POST with {query, variables}" }
+```
+
+---
+
+## 5) Report
+```
+### [YYYY-MM-DD | @codex-report]
+gql rooms: <status + brief snippet>
+gql messages: <status + brief snippet>
+notion mapping: <db schema ready? Y/N>
+Outcome: <success | blocked + what to change>
+```
+
+```
 ### [2025-10-28 | @codex-report]
-gql rooms: 200 validation error (Field "rooms" undefined)
-gql messages: 200 validation error (Field "messages" undefined)
-notion mapping: DB ready? pending (need property alignment)
-Outcome: blocked — Upwork app lacks access to rooms/messages GraphQL fields; adjust permissions before wiring Notion
+GraphQL proxy: GET correctly rejected (405), POST requests return 200 with parsed JSON. 
+`rooms` and `messages` queries respond with GraphQL validation errors (e.g., `Field … undefined`), indicating the current Upwork app permissions do not expose those objects.
+
+**Next actions**
+1) Update the Upwork app permissions to include the GraphQL objects we need (e.g., rooms, messages, contracts).  
+2) Re‑run the sanity tests:
+   - `POST /api/upwork/gql` with `{"query":"query { __typename }"}` → expect 200.  
+   - `rooms(first:10)` / `messages(first:10)` → expect data instead of validation errors.  
+3) Once fields are available, implement the `postGql` helper and the `sync-gql-notion` route described earlier to push nodes into Notion.
+
+Outcome: blocked on Upwork permissions; proxy confirmed working.
+```
+### [2025-10-28 | @chatgpt → @codex] Populate Notion dashboard with first 10 contracts (Applied column)
+
+**Goal:** Automatically insert 10 contract entries into the Notion database under the “Applied” stage, using Upwork data if available or fallback demo entries.
+
+---
+
+#### 1) Create helper: `src/lib/notionSeed.ts`
+```ts
+import { Client } from "@notionhq/client";
+
+const notion = new Client({ auth: process.env.NOTION_TOKEN });
+const DB_ID = process.env.NOTION_DB_ID!;
+
+export async function createDemoContracts(n: number = 10) {
+  const now = new Date().toISOString();
+  const results = [];
+
+  for (let i = 1; i <= n; i++) {
+    const props = {
+      parent: { database_id: DB_ID },
+      properties: {
+        Name: { title: [{ text: { content: `Demo Contract #${i}` } }] },
+        Stage: { select: { name: "Applied" } },
+        Type: { select: { name: "Proposal" } },
+        Client: { rich_text: [{ text: { content: "Demo Client" } }] },
+        Created: { date: { start: now } },
+      },
+    };
+    try {
+      const page = await notion.pages.create(props);
+      results.push({ ok: true, id: page.id });
+    } catch (e: any) {
+      results.push({ ok: false, error: e.message });
+    }
+  }
+  return results;
+}
+```
+
+---
+
+#### 2) Create route: `src/pages/api/notion/seed-applied.ts`
+```ts
+import type { NextApiRequest, NextApiResponse } from "next";
+import { createDemoContracts } from "@/lib/notionSeed";
+
+export const config = { runtime: "nodejs" };
+
+export default async function handler(_req: NextApiRequest, res: NextApiResponse) {
+  try {
+    const out = await createDemoContracts(10);
+    return res.status(200).json({ ok: true, created: out.length, results: out });
+  } catch (e: any) {
+    return res.status(500).json({ ok: false, error: e?.message ?? String(e) });
+  }
+}
+```
+
+---
+
+#### 3) Commit & deploy
+```bash
+git add src/lib/notionSeed.ts src/pages/api/notion/seed-applied.ts
+git commit -m "feat: seed 10 demo contracts into Notion (Applied column)"
+git push origin main
+```
+
+---
+
+#### 4) Verify in production
+```bash
+curl -s https://notion-to-upwork.vercel.app/api/notion/seed-applied | jq
+```
+
+Expected output:
+```
+{ "ok": true, "created": 10, "results": [...] }
+```
+
+and 10 new pages appear in the Notion “Applied” column.
+
+---
+
+#### 5) Report
+```
+### [YYYY-MM-DD | @codex-report]
+seed-applied: <status + JSON summary>
+Outcome: <success | error + reason>
+```
+### [2025-10-28 | @chatgpt → @codex] Add Notion seeding route to generate demo contracts
+
+**Goal:** Create `/api/notion/seed-applied` route that adds 10 demo “Applied” contracts to the Notion dashboard, using Notion SDK and reusing existing environment variables.
+
+---
+
+#### 1) Create file: `src/lib/notionSeed.ts`
+```ts
+import { Client } from "@notionhq/client";
+
+const notion = new Client({ auth: process.env.NOTION_TOKEN });
+const db = process.env.NOTION_DATABASE_ID || process.env.NOTION_DB_ID;
+
+export async function createDemoContracts(count = 10) {
+  if (!db) throw new Error("missing_notion_envs");
+
+  const results = [];
+  for (let i = 1; i <= count; i++) {
+    const title = `Demo sync item ${i}`;
+    const r = await notion.pages.create({
+      parent: { database_id: db },
+      properties: {
+        Name: { title: [{ text: { content: title } }] },
+        Stage: { select: { name: "Applied" } },
+        Type: { select: { name: "Proposal" } },
+        ExternalID: { rich_text: [{ text: { content: `demo-${i}` } }] },
+        UpworkLink: { url: "https://example.com" },
+      },
+    });
+    results.push({ ok: true, id: r.id });
+  }
+  return { ok: true, created: count, results };
+}
+```
+
+---
+
+#### 2) Create file: `src/pages/api/notion/seed-applied.ts`
+```ts
+import type { NextApiRequest, NextApiResponse } from "next";
+import { createDemoContracts } from "@/lib/notionSeed";
+
+export const config = { runtime: "nodejs" };
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  try {
+    const count = Number(req.query.count ?? 10);
+    const result = await createDemoContracts(count);
+    return res.status(200).json(result);
+  } catch (e: any) {
+    return res.status(500).json({ ok: false, error: e?.message ?? String(e) });
+  }
+}
+```
+
+---
+
+#### 3) Install Notion SDK (if missing)
+```bash
+npm i @notionhq/client
+```
+
+---
+
+#### 4) Commit and deploy
+```bash
+git add src/lib/notionSeed.ts src/pages/api/notion/seed-applied.ts
+git commit -m "feat(notion): add seed-applied route for demo items"
+git push origin main
+vercel deploy --prod --force --confirm
+```
+
+---
+
+#### 5) Verify
+```bash
+curl -s https://notion-to-upwork.vercel.app/api/notion/seed-applied | jq
+```
+
+Expected output:
+```json
+{
+  "ok": true,
+  "created": 10,
+  "results": [{ "ok": true, "id": "..." }]
+}
+```
+
+Check your Notion “Applied” column — it should now contain 10 demo items.
+
+---
+
+#### 6) Report
+```
+### [YYYY-MM-DD | @codex-report]
+seed-applied: <status + count>
+Notion DB: <verified Y/N>
+Outcome: <success | blocked + next step>
+```
+### [2025-10-28 21:22 | @chatgpt → @codex] Verify sync-gql-applied route and confirm Notion population
+
+**Goal:** Validate that the new `/api/sync-gql-applied` route correctly populates Notion’s “Applied” column with live data from the Upwork GraphQL proxy.
+
+---
+
+### 1️⃣ Verify the API route in production
+```bash
+curl -s https://notion-to-upwork.vercel.app/api/sync-gql-applied | jq
+```
+Expected:
+```json
+{ "ok": true, "createdCount": 10 }
+```
+If `{ "ok": false }`, capture `error` and `stack` fields for debugging.
+
+---
+
+### 2️⃣ Inspect Notion dashboard
+Open the **UpworkToNotion** board and confirm:
+- Ten new pages appear under the “Applied” column.
+- Each page has populated **Name**, **Type**, **Client**, and **Created** fields.
+- Each page contains a unique **ExternalID** linked to an Upwork contract.
+
+---
+
+### 3️⃣ Capture test output
+Append the JSON output from the curl test and a short Notion confirmation log into this file for traceability.
+
+---
+
+### 4️⃣ Report
+```
+### [YYYY-MM-DD | @codex-report]
+sync-gql-applied: <status + JSON summary>
+Notion: <10 items verified | mismatch | error>
+Outcome: <success | blocked + note>
+```
+
+#128 [2025-10-28 | @chatgpt → @codex] Redeploy and verify `/api/sync-gql-applied` route (404 triage + validation)
+
+**Goal:** Resolve the 404 HTML response from `/api/sync-gql-applied` by confirming the file path, forcing a clean redeploy, and validating the route both locally and in production.
+
+---
+
+#### 1) Verify file location
+Make sure the route file exists at:
+```
+src/pages/api/sync-gql-applied.ts
+```
+> ✅ This should map directly to `https://notion-to-upwork.vercel.app/api/sync-gql-applied`.
+
+If it’s in a subfolder (e.g. `src/pages/api/notion/sync-gql-applied.ts`), the route path becomes `/api/notion/sync-gql-applied` instead.
+
+---
+
+#### 2) Force redeploy with cache clear
+```bash
+npx vercel deploy --prod --force --yes
+```
+Wait until the CLI confirms:
+```
+✅ Production: https://notion-to-upwork.vercel.app
+```
+
+---
+
+#### 3) Test the route output
+Once deployed, test:
+```bash
+curl -s https://notion-to-upwork.vercel.app/api/sync-gql-applied
+```
+✅ Expected:
+```json
+{ "ok": true, "created": 10, "results": [...] }
+```
+
+❌ If still HTML (Next.js 404):
+1. Open **Vercel Dashboard → Deployments → [Latest Build] → Logs**
+2. Search for a line like:
+   ```
+   Route (pages): /api/sync-gql-applied
+   ```
+   If missing — the file was not included in the build.
+
+---
+
+#### 4) Local verification
+Optional: confirm route works before redeploying.
+```bash
+npm run dev
+```
+then open:
+```
+http://localhost:3000/api/sync-gql-applied
+```
+
+If it shows JSON there → the file works locally, so the issue is purely deployment cache.
+
+---
+
+#### 5) Re-run production validation
+After redeploy:
+```bash
+curl -s https://notion-to-upwork.vercel.app/api/sync-gql-applied | jq
+```
+
+---
+
+#### 6) Report
+```
+### [YYYY-MM-DD | @codex-report]
+File path: <confirmed | incorrect>
+Deploy: <success | failed + reason>
+Route test: <status + body snippet>
+Outcome: <working | blocked + action>
+```
+
+#129 [2025-10-28 | @chatgpt → @codex] Append the two most recent instruction entries (#129 and #130) from our current conversation to the end of `botchat.md` in the same consistent markdown format used for previous entries. Preserve all formatting (code blocks, numbered sections, headers, etc.).
+
+#130 [2025-10-28 | @chatgpt → @codex] Append the two most recent instruction entries (#129 and #130) from our current conversation to the end of `botchat.md` in the same consistent markdown format used for previous entries. Preserve all formatting (code blocks, numbered sections, headers, etc.).
+
+**Goal:** Validate that the new `/api/sync-gql-applied` route correctly populates Notion’s “Applied” column with live data from the Upwork GraphQL proxy.
+
+---
+
+### 1️⃣ Verify the API route in production
+```bash
+curl -s https://notion-to-upwork.vercel.app/api/sync-gql-applied | jq
+```
+Expected:
+```json
+{ "ok": true, "createdCount": 10 }
+```
+If `{ "ok": false }`, capture `error` and `stack` fields for debugging.
+
+---
+
+### 2️⃣ Inspect Notion dashboard
+Open the **UpworkToNotion** board and confirm:
+- Ten new pages appear under the “Applied” column.
+- Each page has populated **Name**, **Type**, **Client**, and **Created** fields.
+- Each page contains a unique **ExternalID** linked to an Upwork contract.
+
+---
+
+### 3️⃣ Capture test output
+Append the JSON output from the curl test and a short Notion confirmation log into this file for traceability.
+
+---
+
+### 4️⃣ Report
+```
+### [YYYY-MM-DD | @codex-report]
+sync-gql-applied: <status + JSON summary>
+Notion: <10 items verified | mismatch | error>
+Outcome: <success | blocked + note>
+```
+#128 [2025-10-28 | @chatgpt → @codex] Redeploy and verify `/api/sync-gql-applied` route (404 triage + validation)
+
+**Goal:** Resolve the 404 HTML response from `/api/sync-gql-applied` by confirming the file path, forcing a clean redeploy, and validating the route both locally and in production.
+
+---
+
+#### 1) Verify file location
+Make sure the route file exists at:
+```
+src/pages/api/sync-gql-applied.ts
+```
+> ✅ This should map directly to `https://notion-to-upwork.vercel.app/api/sync-gql-applied`.
+
+If it’s in a subfolder (e.g. `src/pages/api/notion/sync-gql-applied.ts`), the route path becomes `/api/notion/sync-gql-applied` instead.
+
+---
+
+#### 2) Force redeploy with cache clear
+```bash
+npx vercel deploy --prod --force --yes
+```
+Wait until the CLI confirms:
+```
+✅ Production: https://notion-to-upwork.vercel.app
+```
+
+---
+
+#### 3) Test the route output
+Once deployed, test:
+```bash
+curl -s https://notion-to-upwork.vercel.app/api/sync-gql-applied
+```
+✅ Expected:
+```json
+{ "ok": true, "created": 10, "results": [...] }
+```
+
+❌ If still HTML (Next.js 404):
+1. Open **Vercel Dashboard → Deployments → [Latest Build] → Logs**
+2. Search for a line like:
+   ```
+   Route (pages): /api/sync-gql-applied
+   ```
+   If missing — the file was not included in the build.
+
+---
+
+#### 4) Local verification
+Optional: confirm route works before redeploying.
+```bash
+npm run dev
+```
+then open:
+```
+http://localhost:3000/api/sync-gql-applied
+```
+
+If it shows JSON there → the file works locally, so the issue is purely deployment cache.
+
+---
+
+#### 5) Re-run production validation
+After redeploy:
+```bash
+curl -s https://notion-to-upwork.vercel.app/api/sync-gql-applied | jq
+```
+
+---
+
+#### 6) Report
+```
+### [YYYY-MM-DD | @codex-report]
+File path: <confirmed | incorrect>
+Deploy: <success | failed + reason>
+Route test: <status + body snippet>
+Outcome: <working | blocked + action>
+```
