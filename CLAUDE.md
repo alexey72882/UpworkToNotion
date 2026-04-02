@@ -144,12 +144,12 @@ The product spec lives in `specs/specs/0001-upwork-notion-v0.1.md`. The sync pip
 - Upwork GraphQL schema discovered via `/api/upwork/gql-introspect`
 - `fetchUpworkItems()` in `src/lib/upwork.ts` updated to use real Upwork GraphQL API:
   - Root query: `vendorProposals(filter, sortAttribute, pagination)`
-  - Fetches active statuses only (for now): `Pending, Activated, Accepted, Offered, Hired` — 10 items each
+  - Fetches active statuses: `Pending, Activated, Accepted, Offered, Hired` — 10 items each
   - Page size capped at **40** max (Upwork rejects `first > 40` with VJCA-6 error)
   - Maps real field paths: `marketplaceJobPosting.content.title`, `organization.name`, `terms.chargeRate`, `auditDetails.*.rawValue` (epoch ms)
 - `mapStatus` / `mapType` updated to use actual Upwork status enum values
 - All tests updated and passing (23 tests)
-- Sync verified: 40 items created in Notion on first run
+- **End-to-end sync verified**: Upwork → Zod → Notion working, items visible in Notion DB (`29671440d42e80b6bad5dd9c1a671a28`)
 
 ### Known quirks
 
@@ -159,9 +159,9 @@ The product spec lives in `specs/specs/0001-upwork-notion-v0.1.md`. The sync pip
 
 ### What's next
 
-- Add cursor-based pagination to fetch more than 40 per status (575+ Hired proposals exist)
 - Deploy to Vercel and verify cron (`/api/sync`) runs on schedule
-- Monitor sync logs in Vercel dashboard
+- Expand statuses to include `Archived, Declined, Withdrawn` once ready for full history
+- Add cursor-based pagination to fetch more than 10 per status
 
 
 ## Coding standards
