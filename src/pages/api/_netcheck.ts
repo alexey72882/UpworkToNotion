@@ -28,6 +28,10 @@ export default async function handler(
   _req: NextApiRequest,
   res: NextApiResponse,
 ) {
+  if (process.env.NODE_ENV === "production") {
+    return res.status(404).json({ ok: false, error: "not available in production" });
+  }
+
   const checks = await Promise.all([
     tryFetch("https://httpbin.org/get"),
     tryFetch("https://www.google.com"),

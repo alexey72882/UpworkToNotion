@@ -21,9 +21,7 @@ export async function callUpwork(path: string, init?: RequestInit): Promise<Upwo
     return { ok: false, error: "no_token", url: path };
   }
 
-  const url = path.startsWith("http")
-    ? path
-    : `https://www.upwork.com/api/v3/${path.replace(/^\/+/, "")}`;
+  const url = `https://www.upwork.com/api/v3/${path.replace(/^\/+/, "")}`;
 
   try {
     const response = await fetch(url, {

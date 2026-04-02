@@ -1,14 +1,25 @@
 import { Client } from "@notionhq/client";
 
-const token = process.env.NOTION_TOKEN;
-const dbId = process.env.NOTION_DATABASE_ID;
+let _notion: Client | null = null;
+let _dbId: string | null = null;
 
-if (!token) throw new Error("NOTION_TOKEN is required");
-if (!dbId) throw new Error("NOTION_DATABASE_ID is required");
+function getNotion(): Client {
+  if (!_notion) {
+    const token = process.env.NOTION_TOKEN;
+    if (!token) throw new Error("NOTION_TOKEN is required");
+    _notion = new Client({ auth: token });
+  }
+  return _notion;
+}
 
-// v5 client
-export const notion = new Client({ auth: token });
-export const NOTION_DB = dbId as string;
+function getDbId(): string {
+  if (!_dbId) {
+    const id = process.env.NOTION_DATABASE_ID;
+    if (!id) throw new Error("NOTION_DATABASE_ID is required");
+    _dbId = id;
+  }
+  return _dbId;
+}
 
 export type NotionItem = {
   externalId: string;
@@ -23,7 +34,7 @@ export type NotionItem = {
   updated?: string;
 };
 
-function buildProps(item: NotionItem) {
+export function buildProps(item: NotionItem) {
   const props: Record<string, any> = {
     Name: { title: [{ text: { content: item.title } }] },
     Stage: { select: { name: item.stage } },
@@ -41,10 +52,12 @@ function buildProps(item: NotionItem) {
 }
 
 async function findPageIdByExternalId(externalId: string): Promise<string | null> {
+  const notion = getNotion();
+  const dbId = getDbId();
+
   try {
-    // Use the generic request surface — reliable across SDK versions/runtimes.
     const resp: any = await notion.request({
-      path: `databases/${NOTION_DB}/query`,
+      path: `databases/${dbId}/query`,
       method: "post",
       body: {
         filter: {
@@ -55,10 +68,9 @@ async function findPageIdByExternalId(externalId: string): Promise<string | null
     });
     if (resp?.results?.length) return resp.results[0].id as string;
   } catch {
-    // Defensive fallback if the property is missing or misconfigured: query all then scan.
     try {
       const respAll: any = await notion.request({
-        path: `databases/${NOTION_DB}/query`,
+        path: `databases/${dbId}/query`,
         method: "post",
       });
       const match = (respAll?.results || []).find(
@@ -73,10 +85,9 @@ async function findPageIdByExternalId(externalId: string): Promise<string | null
   return null;
 }
 
-/**
- * v5-compatible upsert using `notion.request` for querying.
- */
 export async function upsertToNotion(item: NotionItem): Promise<"created" | "updated"> {
+  const notion = getNotion();
+  const dbId = getDbId();
   const props = buildProps(item);
 
   const existingId = await findPageIdByExternalId(item.externalId);
@@ -85,6 +96,9 @@ export async function upsertToNotion(item: NotionItem): Promise<"created" | "upd
     return "updated";
   }
 
-  await notion.pages.create({ parent: { database_id: NOTION_DB }, properties: props as any });
+  await notion.pages.create({ parent: { database_id: dbId }, properties: props as any });
   return "created";
 }
+
+// Re-export for notionSeed.ts and other consumers that need the raw client
+export { getNotion, getDbId };

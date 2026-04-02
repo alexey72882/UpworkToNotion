@@ -1,9 +1,12 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { createDemoContracts } from "@/lib/notionSeed";
+import { requireAuth } from "@/lib/requireAuth";
 
 export const config = { runtime: "nodejs" };
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (!requireAuth(req, res)) return;
+
   try {
     const count = Number(req.query.count ?? 10);
     const normalizedCount = Number.isFinite(count) && count > 0 ? Math.floor(count) : 10;

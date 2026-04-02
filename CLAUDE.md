@@ -9,13 +9,13 @@ npm install       # install dependencies
 npm run dev       # start local dev server (http://localhost:3000)
 npm run build     # production build
 npm run lint      # run ESLint
+npm run test      # run Vitest once
+npm run test:watch # run Vitest in watch mode
 ```
-
-No test runner is configured yet.
 
 ## Architecture
 
-**Stack:** Next.js 16 (Pages Router) + TypeScript, deployed serverless on Vercel. No test framework yet.
+**Stack:** Next.js 16 (Pages Router) + TypeScript, deployed serverless on Vercel. Tests via Vitest.
 
 **Flow:** Vercel Cron → `/api/sync` → Upwork API → Zod validation → Supabase log → Notion upsert → Pino logs
 
@@ -28,12 +28,12 @@ No test runner is configured yet.
 | `src/pages/api/upwork/callback.ts` | Receives OAuth code, exchanges for tokens with retry logic, saves to Supabase |
 | `src/pages/api/upwork/fetch.ts` | Calls Upwork REST API via `callUpwork` helper |
 | `src/pages/api/upwork/gql.ts` | Proxy to Upwork GraphQL endpoint (`https://api.upwork.com/graphql`) |
-| `src/pages/api/upwork/sync-notion.ts` | Fetches Upwork contracts and writes them to Notion (direct fetch calls) |
 | `src/lib/upworkToken.ts` | OAuth token lifecycle: load from Supabase, auto-refresh when <2 min left |
 | `src/lib/upworkClient.ts` | `callUpwork()` — authenticated REST wrapper using `getValidAccessToken` |
 | `src/lib/notion.ts` | `upsertToNotion()` — find-or-create Notion pages keyed on `External ID` |
-| `src/lib/supabase.ts` | Supabase client (service role, no session persistence) |
-| `src/lib/upwork.ts` | Zod schema for `UpworkItem`; stub `fetchUpworkItems()` (TODO: replace) |
+| `src/lib/supabase.ts` | `getSupabase()` — lazy-init Supabase client (service role, no session persistence) |
+| `src/lib/upwork.ts` | Zod schema for `UpworkItem`; `fetchUpworkItems()` via Upwork GraphQL API |
+| `src/lib/requireAuth.ts` | `requireAuth()` — API route guard checking `Authorization: Bearer <API_SECRET>` |
 | `src/lib/logger.ts` | Pino logger; pretty-prints in dev, JSON in prod |
 
 ### OAuth token storage
@@ -62,10 +62,11 @@ Upwork OAuth tokens are stored as a **singleton row** (`id = "singleton"`) in th
 | `UPWORK_CLIENT_SECRET` | OAuth token exchange & refresh |
 | `UPWORK_REDIRECT_URI` | OAuth callback URL |
 | `LOG_LEVEL` | Pino log level (default: `info`) |
+| `API_SECRET` | Auth for protected API routes (`Authorization: Bearer <secret>`) |
 
 ## Testing after changes
 
-No test framework yet. After every incremental change, verify manually:
+After every incremental change, verify:
 
 ### API routes
 
@@ -76,30 +77,34 @@ curl -s http://localhost:3000/api/ping | jq .
 
 # Notion connectivity (requires NOTION_TOKEN + NOTION_DATABASE_ID)
 curl -s http://localhost:3000/api/notion-debug | jq .
-# expect: {"ok":true}
+# expect: {"ok":true,"title":"..."}
 
-# Sync endpoint (requires Notion + Supabase env vars)
-curl -s http://localhost:3000/api/sync | jq .
+# Sync endpoint (requires API_SECRET + Notion + Supabase env vars)
+curl -s -H "Authorization: Bearer $API_SECRET" http://localhost:3000/api/sync | jq .
 # expect: {"ok":true,"created":...,"updated":...,"durationMs":...}
 
-# Upwork fetch (requires valid OAuth tokens in Supabase)
-curl -s 'http://localhost:3000/api/upwork/fetch?path=contracts?limit=5' | jq .
+# Upwork fetch (requires API_SECRET + valid OAuth tokens in Supabase)
+curl -s -H "Authorization: Bearer $API_SECRET" \
+  'http://localhost:3000/api/upwork/fetch?path=contracts?limit=5' | jq .
 # expect: {"ok":true,"url":"...","data":{...}}
 
-# Upwork GraphQL proxy (requires valid OAuth tokens)
+# Upwork GraphQL proxy (requires API_SECRET + valid OAuth tokens)
 curl -s -X POST http://localhost:3000/api/upwork/gql \
+  -H "Authorization: Bearer $API_SECRET" \
   -H 'Content-Type: application/json' \
   -d '{"query":"{ user { id name } }"}' | jq .
 # expect: {"ok":true,"status":200,"data":{...}}
 
-# Seed demo rows into Notion (requires Notion env vars)
-curl -s 'http://localhost:3000/api/notion/seed-applied?count=2' | jq .
+# Seed demo rows into Notion (requires API_SECRET + Notion env vars)
+curl -s -H "Authorization: Bearer $API_SECRET" \
+  'http://localhost:3000/api/notion/seed-applied?count=2' | jq .
 # expect: {"ok":true,"created":2,"results":[...]}
 ```
 
-### Build & lint
+### Build, lint & test
 
 ```bash
+npm run test    # must exit 0 — runs Vitest
 npm run build   # must exit 0 — catches type errors
 npm run lint    # must exit 0
 ```
@@ -112,12 +117,13 @@ npm run lint    # must exit 0
 
 ### Checklist for every change
 
-1. `npm run build` passes
-2. `npm run lint` passes
-3. `curl /api/ping` returns `{"ok":true}`
-4. If you touched Notion code: `curl /api/sync` succeeds
-5. If you touched Upwork code: `curl /api/upwork/fetch` returns data
-6. If you touched OAuth code: run the full auth flow above
+1. `npm run test` passes
+2. `npm run build` passes
+3. `npm run lint` passes
+4. `curl /api/ping` returns `{"ok":true}`
+5. If you touched Notion code: `curl -H "Authorization: Bearer $API_SECRET" /api/sync` succeeds
+6. If you touched Upwork code: `curl -H "Authorization: Bearer $API_SECRET" /api/upwork/fetch` returns data
+7. If you touched OAuth code: run the full auth flow above
 
 ## PR requirements
 
@@ -125,7 +131,7 @@ Every PR body must include a spec link matching `specs/[0-9]{4}-` — the `spec-
 
 ## Spec
 
-The product spec lives in `specs/specs/0001-upwork-notion-v0.1.md`. Implementation is still at the stub/scaffold stage — `fetchUpworkItems()` and `/api/sync` use demo data pending real Upwork integration.
+The product spec lives in `specs/specs/0001-upwork-notion-v0.1.md`. The sync pipeline is wired up (`fetchUpworkItems()` → Zod → `upsertToNotion()`). The GraphQL query in `upwork.ts` needs refinement after running `/api/upwork/gql-introspect` to discover the actual Upwork schema.
 
 
 ## Coding standards

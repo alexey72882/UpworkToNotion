@@ -1,4 +1,4 @@
-import { supabase } from "./supabase";
+import { getSupabase } from "./supabase";
 
 export type TokenPayload = {
   access_token: string;
@@ -20,7 +20,7 @@ const ROW_ID = "singleton";
 export async function saveTokens(tokens: TokenPayload) {
   const expires_at = Date.now() + tokens.expires_in * 1000;
 
-  const { error } = await supabase
+  const { error } = await getSupabase()
     .from(TABLE)
     .upsert(
       {
@@ -40,7 +40,7 @@ export async function saveTokens(tokens: TokenPayload) {
 }
 
 export async function getTokens(): Promise<TokenRow | null> {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabase()
     .from(TABLE)
     .select("*")
     .eq("id", ROW_ID)

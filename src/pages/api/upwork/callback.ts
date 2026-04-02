@@ -2,6 +2,7 @@ import { Agent, setGlobalDispatcher } from "undici";
 import dns from "node:dns";
 import type { NextApiRequest, NextApiResponse } from "next";
 import { saveTokens } from "@/lib/upworkToken";
+import { logger } from "@/lib/logger";
 
 dns.setDefaultResultOrder("ipv4first");
 setGlobalDispatcher(
@@ -107,7 +108,7 @@ export default async function handler(
   res: NextApiResponse,
 ) {
   try {
-    const { code, error } = req.query;
+    const { code, error, state } = req.query;
 
     if (error) {
       return res.status(400).json({ ok: false, error });
@@ -116,6 +117,15 @@ export default async function handler(
     if (!code) {
       return res.status(400).json({ ok: false, error: "missing code" });
     }
+
+    const cookieState = req.cookies?.oauth_state;
+    if (!state || !cookieState || state !== cookieState) {
+      return res.status(403).json({ ok: false, error: "invalid_state" });
+    }
+    res.setHeader(
+      "Set-Cookie",
+      "oauth_state=; HttpOnly; Path=/; Max-Age=0",
+    );
 
     const client_id = process.env.UPWORK_CLIENT_ID;
     const client_secret = process.env.UPWORK_CLIENT_SECRET;
@@ -131,9 +141,9 @@ export default async function handler(
       const probe = await fetch("https://api.upwork.com/api/v3/oauth2/token", {
         method: "HEAD",
       });
-      console.log("✅ Upwork reachable:", probe.status);
+      logger.info({ status: probe.status }, "Upwork reachable");
     } catch (probeError) {
-      console.warn("⚠️ Upwork preflight failed:", probeError);
+      logger.warn({ err: probeError }, "Upwork preflight failed");
     }
 
     const result = await exchangeWithRetry({

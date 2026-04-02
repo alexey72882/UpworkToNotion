@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { callUpwork } from "@/lib/upworkClient";
+import { requireAuth } from "@/lib/requireAuth";
 
 export const config = { runtime: "nodejs" };
 
@@ -7,6 +8,8 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
+  if (!requireAuth(req, res)) return;
+
   try {
     const { path = "contracts?limit=10" } = req.query;
     if (Array.isArray(path)) {

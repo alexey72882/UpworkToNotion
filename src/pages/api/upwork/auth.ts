@@ -22,6 +22,9 @@ export default async function handler(
   url.searchParams.set("redirect_uri", redirect_uri);
   url.searchParams.set("state", state);
 
-  console.log("[upwork/auth] redirecting to:", url.toString());
+  res.setHeader(
+    "Set-Cookie",
+    `oauth_state=${state}; HttpOnly; SameSite=Lax; Path=/; Max-Age=600; Secure`,
+  );
   return res.redirect(302, url.toString());
 }

@@ -1,11 +1,14 @@
-// src/pages/api/sync.ts
 import type { NextApiRequest, NextApiResponse } from "next";
-import { upsertToNotion, type NotionItem } from "@/lib/notion";
+import { upsertToNotion } from "@/lib/notion";
+import { fetchUpworkItems } from "@/lib/upwork";
+import { requireAuth } from "@/lib/requireAuth";
+import { logger } from "@/lib/logger";
 
 type Ok = {
   ok: true;
   created: number;
   updated: number;
+  skipped: number;
   durationMs: number;
 };
 
@@ -16,40 +19,43 @@ type Err = {
 
 export default async function handler(
   req: NextApiRequest,
-  res: NextApiResponse<Ok | Err>
+  res: NextApiResponse<Ok | Err>,
 ) {
-  // Vercel cron uses GET, so enforce it
+  if (!requireAuth(req, res)) return;
+
   if (req.method !== "GET") {
     res.setHeader("Allow", "GET");
     return res.status(405).json({ ok: false, error: "Method Not Allowed" });
   }
 
   const start = Date.now();
+  logger.info("sync started");
 
   try {
-    // TODO: replace with real Upwork → Notion mapping.
-    // Example single-item upsert so the route does something meaningful:
-    const demoItem: NotionItem = {
-      externalId: "demo-1",
-      title: "Demo sync item",
-      stage: "Applied",
-      type: "Proposal",
-      url: "https://example.com",
-    };
+    const items = await fetchUpworkItems();
+    let created = 0;
+    let updated = 0;
+    let skipped = 0;
 
-    const result = await upsertToNotion(demoItem);
-    const created = result === "created" ? 1 : 0;
-    const updated = result === "updated" ? 1 : 0;
+    for (const item of items) {
+      try {
+        const result = await upsertToNotion(item);
+        if (result === "created") created++;
+        else updated++;
+      } catch (err) {
+        skipped++;
+        logger.warn({ externalId: item.externalId, err }, "upsert failed, skipping");
+      }
+    }
 
-    return res.status(200).json({
-      ok: true,
-      created,
-      updated,
-      durationMs: Date.now() - start,
-    });
+    const durationMs = Date.now() - start;
+    logger.info({ created, updated, skipped, durationMs }, "sync completed");
+
+    return res.status(200).json({ ok: true, created, updated, skipped, durationMs });
   } catch (err) {
     const message =
       err instanceof Error ? err.message : typeof err === "string" ? err : "Unknown error";
+    logger.error({ err }, "sync failed");
     return res.status(500).json({ ok: false, error: message });
   }
 }
