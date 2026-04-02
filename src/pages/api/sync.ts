@@ -4,8 +4,11 @@ import { fetchUpworkItems } from "@/lib/upwork";
 import { requireAuth } from "@/lib/requireAuth";
 import { logger } from "@/lib/logger";
 
+export const config = { runtime: "nodejs" };
+
 type Ok = {
   ok: true;
+  fetched: number;
   created: number;
   updated: number;
   skipped: number;
@@ -51,7 +54,7 @@ export default async function handler(
     const durationMs = Date.now() - start;
     logger.info({ created, updated, skipped, durationMs }, "sync completed");
 
-    return res.status(200).json({ ok: true, created, updated, skipped, durationMs });
+    return res.status(200).json({ ok: true, fetched: items.length, created, updated, skipped, durationMs });
   } catch (err) {
     const message =
       err instanceof Error ? err.message : typeof err === "string" ? err : "Unknown error";

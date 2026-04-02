@@ -45,53 +45,62 @@ describe("UpworkItem Zod schema", () => {
 });
 
 describe("mapStatus", () => {
-  it("maps active/hire to Hired", () => {
-    expect(mapStatus("active")).toBe("Hired");
+  it("maps Hired/Accepted/Activated to Hired", () => {
     expect(mapStatus("Hired")).toBe("Hired");
+    expect(mapStatus("Accepted")).toBe("Hired");
+    expect(mapStatus("Activated")).toBe("Hired");
   });
 
-  it("maps interview/shortlist to Interview", () => {
-    expect(mapStatus("interview")).toBe("Interview");
-    expect(mapStatus("shortlisted")).toBe("Interview");
+  it("maps Offered to Interview", () => {
+    expect(mapStatus("Offered")).toBe("Interview");
   });
 
-  it("maps viewed to Viewed", () => {
-    expect(mapStatus("viewed")).toBe("Viewed");
+  it("maps Declined/Withdrawn/Archived to Viewed", () => {
+    expect(mapStatus("Declined")).toBe("Viewed");
+    expect(mapStatus("Withdrawn")).toBe("Viewed");
+    expect(mapStatus("Archived")).toBe("Viewed");
   });
 
   it("defaults to Applied", () => {
+    expect(mapStatus("Pending")).toBe("Applied");
     expect(mapStatus("unknown")).toBe("Applied");
-    expect(mapStatus("")).toBe("Applied");
   });
 });
 
 describe("mapType", () => {
-  it("maps contract", () => {
-    expect(mapType("contract")).toBe("Contract");
+  it("maps Hired/Accepted/Activated to Contract", () => {
+    expect(mapType("Hired")).toBe("Contract");
+    expect(mapType("Accepted")).toBe("Contract");
+    expect(mapType("Activated")).toBe("Contract");
   });
 
-  it("maps offer", () => {
-    expect(mapType("offer")).toBe("Offer");
+  it("maps Offered to Offer", () => {
+    expect(mapType("Offered")).toBe("Offer");
   });
 
   it("defaults to Proposal", () => {
-    expect(mapType("proposal")).toBe("Proposal");
-    expect(mapType(undefined)).toBe("Proposal");
+    expect(mapType("Pending")).toBe("Proposal");
+    expect(mapType("Declined")).toBe("Proposal");
   });
 });
 
 describe("mapNode", () => {
-  it("maps a full node to UpworkItem shape", () => {
+  it("maps a full Upwork GraphQL node to UpworkItem shape", () => {
     const node = {
       id: "abc-123",
-      title: "Build a website",
-      status: "active",
-      type: "contract",
-      client: { name: "Acme Corp" },
-      budget: { amount: 3000, currency: "USD" },
-      jobUrl: "https://upwork.com/job/abc",
-      createdDate: "2026-01-01",
-      updatedDate: "2026-01-02",
+      status: { status: "Activated" },
+      marketplaceJobPosting: {
+        id: "job-456",
+        content: { title: "Build a website" },
+      },
+      organization: { name: "Acme Corp" },
+      terms: {
+        chargeRate: { rawValue: "65", currency: "USD" },
+      },
+      auditDetails: {
+        createdDateTime: { rawValue: "1700000000000" },
+        modifiedDateTime: { rawValue: "1700100000000" },
+      },
     };
 
     const result = mapNode(node);
@@ -99,22 +108,30 @@ describe("mapNode", () => {
     expect(parsed.success).toBe(true);
     if (parsed.success) {
       expect(parsed.data.externalId).toBe("abc-123");
+      expect(parsed.data.title).toBe("Build a website");
       expect(parsed.data.stage).toBe("Hired");
       expect(parsed.data.type).toBe("Contract");
       expect(parsed.data.client).toBe("Acme Corp");
-      expect(parsed.data.value).toBe(3000);
+      expect(parsed.data.value).toBe(65);
+      expect(parsed.data.currency).toBe("USD");
+      expect(parsed.data.url).toBe("https://www.upwork.com/jobs/job-456");
+      expect(parsed.data.created).toBe("2023-11-14T22:13:20.000Z");
     }
   });
 
   it("handles missing optional fields", () => {
-    const node = { id: "1", title: "Job", status: "applied" };
+    const node = {
+      id: "1",
+      status: { status: "Pending" },
+      marketplaceJobPosting: { content: { title: "Job" } },
+    };
     const result = mapNode(node);
     const parsed = UpworkItem.safeParse(result);
     expect(parsed.success).toBe(true);
   });
 
   it("falls back to 'Untitled' when title is missing", () => {
-    const node = { id: "1", status: "applied" };
+    const node = { id: "1", status: { status: "Pending" } };
     const result = mapNode(node) as Record<string, unknown>;
     expect(result.title).toBe("Untitled");
   });

@@ -49,6 +49,7 @@ Upwork OAuth tokens are stored as a **singleton row** (`id = "singleton"`) in th
 - REST calls go through `callUpwork(path)` in `src/lib/upworkClient.ts`.
 - GraphQL calls are proxied through `/api/upwork/gql` (POST `{query, variables}`).
 - Base URL for REST: `https://www.upwork.com/api/v3/`.
+- The sync pipeline uses `vendorProposals` GraphQL query directly (not the proxy). Page size must be ≤ 40.
 
 ## Environment variables
 
@@ -131,7 +132,36 @@ Every PR body must include a spec link matching `specs/[0-9]{4}-` — the `spec-
 
 ## Spec
 
-The product spec lives in `specs/specs/0001-upwork-notion-v0.1.md`. The sync pipeline is wired up (`fetchUpworkItems()` → Zod → `upsertToNotion()`). The GraphQL query in `upwork.ts` needs refinement after running `/api/upwork/gql-introspect` to discover the actual Upwork schema.
+The product spec lives in `specs/specs/0001-upwork-notion-v0.1.md`. The sync pipeline is fully wired up and working end-to-end.
+
+## Current status (as of 2026-04-02)
+
+### What's done
+
+- Full OAuth flow working (auth → callback → tokens saved to Supabase)
+- New Supabase project provisioned (old one expired), `upwork_tokens` table created
+- All env vars updated locally (`.env.local`) and on Vercel
+- Upwork GraphQL schema discovered via `/api/upwork/gql-introspect`
+- `fetchUpworkItems()` in `src/lib/upwork.ts` updated to use real Upwork GraphQL API:
+  - Root query: `vendorProposals(filter, sortAttribute, pagination)`
+  - Fetches active statuses only (for now): `Pending, Activated, Accepted, Offered, Hired` — 10 items each
+  - Page size capped at **40** max (Upwork rejects `first > 40` with VJCA-6 error)
+  - Maps real field paths: `marketplaceJobPosting.content.title`, `organization.name`, `terms.chargeRate`, `auditDetails.*.rawValue` (epoch ms)
+- `mapStatus` / `mapType` updated to use actual Upwork status enum values
+- All tests updated and passing (23 tests)
+- Sync verified: 40 items created in Notion on first run
+
+### Known quirks
+
+- `vendorProposals` pagination limit is 40 (`first: 41+` returns VJCA-6 error, no pagination cursor yet)
+- `sync.ts` response includes `fetched` count alongside `created/updated/skipped`
+- `sync.ts` requires `export const config = { runtime: "nodejs" }` — without it the route may use edge runtime and behave differently
+
+### What's next
+
+- Add cursor-based pagination to fetch more than 40 per status (575+ Hired proposals exist)
+- Deploy to Vercel and verify cron (`/api/sync`) runs on schedule
+- Monitor sync logs in Vercel dashboard
 
 
 ## Coding standards
