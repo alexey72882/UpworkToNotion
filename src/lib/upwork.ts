@@ -5,7 +5,7 @@ import { logger } from "@/lib/logger";
 export const UpworkItem = z.object({
   externalId: z.string(),
   title: z.string(),
-  stage: z.enum(["Applied", "Viewed", "Interview", "Hired"]),
+  stage: z.enum(["Applied", "Viewed", "Interview", "Hired", "Lead"]),
   type: z.enum(["Proposal", "Offer", "Contract"]),
   client: z.string().optional(),
   value: z.number().optional(),
@@ -17,7 +17,7 @@ export const UpworkItem = z.object({
 
 export type UpworkItem = z.infer<typeof UpworkItem>;
 
-// Upwork GraphQL vendorProposals accepts at most 40 items per page
+// vendorProposals accepts at most 40 items per page
 const PAGE_SIZE = 10;
 
 // Active statuses only — covers current open proposals and recent hires
@@ -87,6 +87,43 @@ export function mapNode(node: any): unknown {
   };
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function mapJobNode(node: any): unknown | null {
+  if (node.applied === true) return null;
+  const fixedAmount = Number(node.amount?.rawValue ?? 0);
+  const hourlyMax = Number(node.hourlyBudgetMax?.rawValue ?? 0);
+  const value = fixedAmount > 0 ? fixedAmount : hourlyMax > 0 ? hourlyMax : undefined;
+  const currency = node.amount?.currency ?? undefined;
+  return {
+    externalId: `job-${node.id ?? ""}`,
+    title: String(node.title ?? "Untitled"),
+    stage: "Lead" as const,
+    type: "Proposal" as const,
+    client: node.client?.location?.country ?? undefined,
+    value: value,
+    currency: currency,
+    url: node.id ? `https://www.upwork.com/jobs/${node.id}` : undefined,
+    created: node.publishedDateTime ?? undefined,
+    updated: undefined,
+  };
+}
+
+async function gqlFetch(token: string, query: string) {
+  const response = await fetch("https://api.upwork.com/graphql", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      "User-Agent": "notion-to-upwork/1.0 (+vercel)",
+    },
+    body: JSON.stringify({ query }),
+  });
+  const text = await response.text();
+  if (!response.ok) throw new Error(`Upwork GraphQL HTTP ${response.status}: ${text.slice(0, 200)}`);
+  return JSON.parse(text);
+}
+
 export async function fetchUpworkItems(): Promise<UpworkItem[]> {
   const token = await getValidAccessToken();
   if (!token) throw new Error("No valid Upwork access token");
@@ -100,7 +137,6 @@ export async function fetchUpworkItems(): Promise<UpworkItem[]> {
     sortAttribute: { field: CREATEDDATETIME, sortOrder: DESC }
     pagination: { first: ${PAGE_SIZE} }
   ) {
-    totalCount
     edges {
       node {
         id
@@ -122,29 +158,11 @@ export async function fetchUpworkItems(): Promise<UpworkItem[]> {
   }
 }`;
 
-    const response = await fetch("https://api.upwork.com/graphql", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        "User-Agent": "notion-to-upwork/1.0 (+vercel)",
-      },
-      body: JSON.stringify({ query }),
-    });
-
-    const text = await response.text();
-
-    if (!response.ok) {
-      logger.error({ status, httpStatus: response.status, body: text.slice(0, 200) }, "Upwork API error");
-      continue;
-    }
-
     let json;
     try {
-      json = JSON.parse(text);
-    } catch {
-      logger.error({ status, body: text.slice(0, 200) }, "Failed to parse Upwork response");
+      json = await gqlFetch(token, query);
+    } catch (err) {
+      logger.error({ status, err }, "Upwork API error, skipping status");
       continue;
     }
 
@@ -165,6 +183,58 @@ export async function fetchUpworkItems(): Promise<UpworkItem[]> {
         logger.warn({ status, id: raw?.id, errors: parsed.error.issues }, "zod validation failed");
       }
     }
+  }
+
+  return items;
+}
+
+// Fetches the last 10 jobs from the Upwork job search feed (no keyword filter).
+export async function fetchJobFeed(): Promise<UpworkItem[]> {
+  const token = await getValidAccessToken();
+  if (!token) throw new Error("No valid Upwork access token");
+
+  const query = `{
+  marketplaceJobPostingsSearch(
+    marketPlaceJobFilter: {}
+    searchType: USER_JOBS_SEARCH
+  ) {
+    edges {
+      node {
+        id
+        title
+        amount { rawValue currency }
+        hourlyBudgetMax { rawValue }
+        publishedDateTime
+        client { location { country } }
+        applied
+      }
+    }
+  }
+}`;
+
+  let json;
+  try {
+    json = await gqlFetch(token, query);
+  } catch (err) {
+    logger.error({ err }, "Job feed API error");
+    return [];
+  }
+
+  if (json?.errors) {
+    logger.warn({ errors: json.errors }, "Job feed GraphQL errors");
+    return [];
+  }
+
+  const edges = json?.data?.marketplaceJobPostingsSearch?.edges ?? [];
+  logger.info({ edgeCount: edges.length }, "fetched job feed");
+
+  const items: UpworkItem[] = [];
+  for (const edge of edges) {
+    const raw = edge?.node ?? edge;
+    const mapped = mapJobNode(raw);
+    if (!mapped) continue;
+    const parsed = UpworkItem.safeParse(mapped);
+    if (parsed.success) items.push(parsed.data);
   }
 
   return items;

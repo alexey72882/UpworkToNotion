@@ -150,6 +150,8 @@ The product spec lives in `specs/specs/0001-upwork-notion-v0.1.md`. The sync pip
 - `mapStatus` / `mapType` updated to use actual Upwork status enum values
 - All tests updated and passing (23 tests)
 - **End-to-end sync verified**: Upwork → Zod → Notion working, items visible in Notion DB (`29671440d42e80b6bad5dd9c1a671a28`)
+- **Deployed to Vercel**: production sync working, cron runs daily at 9am UTC (`0 9 * * *`)
+- Next.js updated to 16.2.2 (CVE-2025-66478 fix required for Vercel deploy)
 
 ### Known quirks
 
@@ -159,9 +161,10 @@ The product spec lives in `specs/specs/0001-upwork-notion-v0.1.md`. The sync pip
 
 ### What's next
 
-- Deploy to Vercel and verify cron (`/api/sync`) runs on schedule
 - Expand statuses to include `Archived, Declined, Withdrawn` once ready for full history
-- Add cursor-based pagination to fetch more than 10 per status
+- Add cursor-based pagination to fetch more than 10 per status (575+ Hired proposals exist)
+- Improve Notion layout — views, filters, grouping by stage
+- Consider notifications when proposal status changes
 
 
 ## Coding standards

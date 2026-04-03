@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { UpworkItem, mapStatus, mapType, mapNode } from "@/lib/upwork";
+import { UpworkItem, mapStatus, mapType, mapNode, mapJobNode } from "@/lib/upwork";
 
 describe("UpworkItem Zod schema", () => {
   const valid = {
@@ -29,6 +29,10 @@ describe("UpworkItem Zod schema", () => {
   it("rejects missing required fields", () => {
     expect(UpworkItem.safeParse({}).success).toBe(false);
     expect(UpworkItem.safeParse({ externalId: "1" }).success).toBe(false);
+  });
+
+  it("accepts Lead stage", () => {
+    expect(UpworkItem.safeParse({ ...valid, stage: "Lead" }).success).toBe(true);
   });
 
   it("rejects invalid stage", () => {
@@ -134,5 +138,43 @@ describe("mapNode", () => {
     const node = { id: "1", status: { status: "Pending" } };
     const result = mapNode(node) as Record<string, unknown>;
     expect(result.title).toBe("Untitled");
+  });
+});
+
+describe("mapJobNode", () => {
+  const node = {
+    id: "abc123",
+    title: "UI Designer needed",
+    amount: { rawValue: "500", currency: "USD" },
+    hourlyBudgetMax: null,
+    publishedDateTime: "2026-04-03T12:00:00+0000",
+    client: { location: { country: "United States" } },
+    applied: false,
+  };
+
+  it("maps a fixed-price job node correctly", () => {
+    const result = mapJobNode(node) as Record<string, unknown>;
+    const parsed = UpworkItem.safeParse(result);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.externalId).toBe("job-abc123");
+      expect(parsed.data.title).toBe("UI Designer needed");
+      expect(parsed.data.stage).toBe("Lead");
+      expect(parsed.data.type).toBe("Proposal");
+      expect(parsed.data.value).toBe(500);
+      expect(parsed.data.currency).toBe("USD");
+      expect(parsed.data.url).toBe("https://www.upwork.com/jobs/abc123");
+      expect(parsed.data.client).toBe("United States");
+    }
+  });
+
+  it("returns null when already applied", () => {
+    expect(mapJobNode({ ...node, applied: true })).toBeNull();
+  });
+
+  it("falls back to hourlyBudgetMax when fixed amount is zero", () => {
+    const hourlyNode = { ...node, amount: { rawValue: "0", currency: "USD" }, hourlyBudgetMax: { rawValue: "85" } };
+    const result = mapJobNode(hourlyNode) as Record<string, unknown>;
+    expect(result.value).toBe(85);
   });
 });

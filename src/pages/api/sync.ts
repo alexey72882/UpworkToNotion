@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { upsertToNotion } from "@/lib/notion";
-import { fetchUpworkItems } from "@/lib/upwork";
+import { fetchUpworkItems, fetchJobFeed } from "@/lib/upwork";
 import { requireAuth } from "@/lib/requireAuth";
 import { logger } from "@/lib/logger";
 
@@ -35,7 +35,8 @@ export default async function handler(
   logger.info("sync started");
 
   try {
-    const items = await fetchUpworkItems();
+    const [proposalItems, jobFeedItems] = await Promise.all([fetchUpworkItems(), fetchJobFeed()]);
+    const items = [...proposalItems, ...jobFeedItems];
     let created = 0;
     let updated = 0;
     let skipped = 0;

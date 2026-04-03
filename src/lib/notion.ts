@@ -24,7 +24,7 @@ function getDbId(): string {
 export type NotionItem = {
   externalId: string;
   title: string;
-  stage: "Applied" | "Viewed" | "Interview" | "Hired";
+  stage: "Applied" | "Viewed" | "Interview" | "Hired" | "Lead";
   type: "Proposal" | "Offer" | "Contract";
   client?: string;
   value?: number;
