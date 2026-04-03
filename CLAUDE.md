@@ -44,6 +44,76 @@ Upwork OAuth tokens are stored as a **singleton row** (`id = "singleton"`) in th
 
 `upsertToNotion()` queries the Notion database by the `External ID` rich-text property to detect existing pages, then either updates or creates. Uses `notion.request()` directly for the query to stay compatible with SDK v5.
 
+### Notion databases
+
+The app uses **3 separate Notion databases**. Each must be shared with the Notion integration (open the DB → top-right `...` → **Connections** → add your integration).
+
+Get a database ID from its URL: `https://notion.so/workspace/`**`<32-char-hex>`**`?v=...`
+
+#### 1. Filtered Job Feed (`NOTION_JOB_FEED_DATABASE_ID`)
+
+Jobs fetched from Upwork marketplace matching your filters. App writes here.
+
+| Property | Type |
+|----------|------|
+| `Name` | Title |
+| `External ID` | Rich text |
+| `Client` | Rich text (client country) |
+| `Value` | Number |
+| `Currency` | Select |
+| `Upwork Link` | URL |
+| `Created` | Date (published date) |
+
+#### 2. Job Feed Filters (`NOTION_JOB_FILTERS_DATABASE_ID`)
+
+Each row is a saved search. App reads this to know what to fetch from Upwork.
+
+| Property | Type | Notes |
+|----------|------|-------|
+| `Name` | Title | Label for the filter (e.g. "Figma UI") |
+| `Skill Expression` | Rich text | Free-text skill query (e.g. `UI UX Figma`) |
+| `Category IDs` | Rich text | Comma-separated category IDs |
+| `Occupation IDs` | Rich text | Comma-separated occupation IDs |
+| `Job Type` | Select | `Hourly` or `Fixed` |
+| `Min Budget` | Number | Min fixed price or hourly rate |
+| `Max Budget` | Number | Max fixed price or hourly rate |
+| `Experience Level` | Select | `Entry`, `Intermediate`, or `Expert` |
+| `Verified Payment Only` | Checkbox | Only clients with verified payment |
+| `Active` | Checkbox | Uncheck to pause this filter |
+
+#### 3. Active Contracts (`NOTION_CONTRACTS_DATABASE_ID`)
+
+Your active Upwork contracts. App writes here.
+
+| Property | Type |
+|----------|------|
+| `Name` | Title |
+| `External ID` | Rich text |
+| `Client` | Rich text |
+| `Contract Type` | Select (`Hourly`, `Fixed`) |
+| `Rate` | Number |
+| `Currency` | Select |
+| `Status` | Select (`Active`, `Paused`, `Closed`) |
+| `Start Date` | Date |
+| `Upwork Link` | URL |
+
+#### Setting the env vars
+
+**.env.local:**
+```
+NOTION_JOB_FEED_DATABASE_ID=<id>
+NOTION_JOB_FILTERS_DATABASE_ID=<id>
+NOTION_CONTRACTS_DATABASE_ID=<id>
+```
+
+**Vercel (production):**
+```bash
+npx vercel env add NOTION_JOB_FEED_DATABASE_ID production
+npx vercel env add NOTION_JOB_FILTERS_DATABASE_ID production
+npx vercel env add NOTION_CONTRACTS_DATABASE_ID production
+npx vercel --prod
+```
+
 ### Upwork API access
 
 - REST calls go through `callUpwork(path)` in `src/lib/upworkClient.ts`.
