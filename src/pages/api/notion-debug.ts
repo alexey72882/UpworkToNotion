@@ -7,7 +7,7 @@ export default async function handler(
 ) {
   try {
     const notion = getNotion();
-    const dbId = getDbId();
+    const dbId = getDbId("NOTION_DATABASE_ID");
     const db = await notion.databases.retrieve({ database_id: dbId });
     return res.status(200).json({ ok: true, title: (db as any).title?.[0]?.plain_text ?? null });
   } catch (err) {

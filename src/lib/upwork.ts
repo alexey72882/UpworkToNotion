@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { getValidAccessToken } from "@/lib/upworkToken";
 import { logger } from "@/lib/logger";
+import type { JobFilter } from "@/lib/notion";
 
 export const UpworkItem = z.object({
   externalId: z.string(),
@@ -188,20 +189,80 @@ export async function fetchUpworkItems(): Promise<UpworkItem[]> {
   return items;
 }
 
-// Fetches the last 10 jobs from the Upwork job search feed (no keyword filter).
-export async function fetchJobFeed(): Promise<UpworkItem[]> {
+// ---------------------------------------------------------------------------
+// Job feed — reads filters from Notion, fetches matching jobs
+// ---------------------------------------------------------------------------
+
+export type JobFeedResult = {
+  externalId: string;
+  title: string;
+  description?: string;
+  client?: string;
+  value?: number;
+  currency?: string;
+  url?: string;
+  created?: string;
+};
+
+function buildJobFilter(filter: JobFilter): string {
+  const parts: string[] = [];
+  if (filter.skillExpression) parts.push(`skillExpression_eq: ${JSON.stringify(filter.skillExpression)}`);
+  if (filter.categoryIds?.length) parts.push(`categoryIds_any: [${filter.categoryIds.map(id => JSON.stringify(id)).join(", ")}]`);
+  if (filter.occupationIds?.length) parts.push(`occupationIds_any: [${filter.occupationIds.map(id => JSON.stringify(id)).join(", ")}]`);
+  if (filter.jobType) parts.push(`jobType_eq: ${filter.jobType}`);
+  if (filter.verifiedPaymentOnly) parts.push(`verifiedPaymentOnly_eq: true`);
+  if (filter.experienceLevel) parts.push(`experienceLevel_eq: ${filter.experienceLevel.toUpperCase()}_LEVEL`);
+  if (filter.minBudget !== undefined || filter.maxBudget !== undefined) {
+    const budgetParts: string[] = [];
+    if (filter.minBudget !== undefined) budgetParts.push(`min: ${filter.minBudget}`);
+    if (filter.maxBudget !== undefined) budgetParts.push(`max: ${filter.maxBudget}`);
+    parts.push(`budgetRange_eq: { ${budgetParts.join(", ")} }`);
+  }
+  return parts.join("\n    ");
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapJobFeedNode(node: any): JobFeedResult | null {
+  if (node.applied === true) return null;
+  const fixedAmount = Number(node.amount?.rawValue ?? 0);
+  const hourlyMax = Number(node.hourlyBudgetMax?.rawValue ?? 0);
+  const value = fixedAmount > 0 ? fixedAmount : hourlyMax > 0 ? hourlyMax : undefined;
+  return {
+    externalId: `job-${node.id ?? ""}`,
+    title: String(node.title ?? "Untitled"),
+    description: node.description ?? undefined,
+    client: node.client?.location?.country ?? undefined,
+    value,
+    currency: node.amount?.currency ?? undefined,
+    url: node.id ? `https://www.upwork.com/jobs/${node.id}` : undefined,
+    created: node.publishedDateTime ?? undefined,
+  };
+}
+
+export async function fetchJobFeed(filters: JobFilter[]): Promise<JobFeedResult[]> {
   const token = await getValidAccessToken();
   if (!token) throw new Error("No valid Upwork access token");
 
-  const query = `{
+  if (filters.length === 0) {
+    logger.info("no active job filters, skipping job feed");
+    return [];
+  }
+
+  const seen = new Set<string>();
+  const items: JobFeedResult[] = [];
+
+  for (const filter of filters) {
+    const filterStr = buildJobFilter(filter);
+    const query = `{
   marketplaceJobPostingsSearch(
-    marketPlaceJobFilter: {}
+    marketPlaceJobFilter: { ${filterStr} }
     searchType: USER_JOBS_SEARCH
   ) {
     edges {
       node {
         id
         title
+        description
         amount { rawValue currency }
         hourlyBudgetMax { rawValue }
         publishedDateTime
@@ -212,30 +273,111 @@ export async function fetchJobFeed(): Promise<UpworkItem[]> {
   }
 }`;
 
+    let json;
+    try {
+      json = await gqlFetch(token, query);
+    } catch (err) {
+      logger.error({ filter: filter.name, err }, "Job feed API error, skipping filter");
+      continue;
+    }
+
+    if (json?.errors) {
+      logger.warn({ filter: filter.name, errors: json.errors }, "Job feed GraphQL errors, skipping filter");
+      continue;
+    }
+
+    const edges = json?.data?.marketplaceJobPostingsSearch?.edges ?? [];
+    logger.info({ filter: filter.name, edgeCount: edges.length }, "fetched jobs for filter");
+
+    for (const edge of edges) {
+      const raw = edge?.node ?? edge;
+      const mapped = mapJobFeedNode(raw);
+      if (!mapped || seen.has(mapped.externalId)) continue;
+      seen.add(mapped.externalId);
+      items.push(mapped);
+    }
+  }
+
+  return items;
+}
+
+// ---------------------------------------------------------------------------
+// Contracts
+// ---------------------------------------------------------------------------
+
+export type UpworkContract = {
+  externalId: string;
+  title: string;
+  client?: string;
+  contractType?: "Hourly" | "Fixed";
+  rate?: number;
+  currency?: string;
+  status?: string;
+  startDate?: string;
+  url?: string;
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapContractNode(node: any): UpworkContract {
+  const hourlyRate = node.terms?.hourlyTerms?.chargeRate?.rawValue;
+  const fixedAmount = node.terms?.fixedPriceTerms?.amount?.rawValue;
+  const rate = hourlyRate ? Number(hourlyRate) : fixedAmount ? Number(fixedAmount) : undefined;
+  const currency = node.terms?.hourlyTerms?.chargeRate?.currency
+    ?? node.terms?.fixedPriceTerms?.amount?.currency
+    ?? undefined;
+  const contractType = hourlyRate ? "Hourly" : fixedAmount ? "Fixed" : undefined;
+
+  return {
+    externalId: `contract-${node.id ?? ""}`,
+    title: String(node.title ?? "Untitled"),
+    client: node.clientOrganization?.name ?? undefined,
+    contractType,
+    rate,
+    currency,
+    status: node.status ?? undefined,
+    startDate: node.startDate ?? undefined,
+    url: node.id ? `https://www.upwork.com/contracts/${node.id}` : undefined,
+  };
+}
+
+export async function fetchContracts(): Promise<UpworkContract[]> {
+  const token = await getValidAccessToken();
+  if (!token) throw new Error("No valid Upwork access token");
+
+  const query = `{
+  contractList {
+    contracts {
+      id
+      title
+      status
+      startDate
+      clientOrganization { name }
+      terms {
+        hourlyTerms { chargeRate { rawValue currency } }
+        fixedPriceTerms { amount { rawValue currency } }
+      }
+    }
+  }
+}`;
+
   let json;
   try {
     json = await gqlFetch(token, query);
   } catch (err) {
-    logger.error({ err }, "Job feed API error");
+    logger.error({ err }, "Contracts API error");
     return [];
   }
 
   if (json?.errors) {
-    logger.warn({ errors: json.errors }, "Job feed GraphQL errors");
+    logger.warn({ errors: json.errors }, "Contracts GraphQL errors");
     return [];
   }
 
-  const edges = json?.data?.marketplaceJobPostingsSearch?.edges ?? [];
-  logger.info({ edgeCount: edges.length }, "fetched job feed");
+  const contracts = json?.data?.contractList?.contracts ?? [];
+  logger.info({ count: contracts.length }, "fetched contracts");
 
-  const items: UpworkItem[] = [];
-  for (const edge of edges) {
-    const raw = edge?.node ?? edge;
-    const mapped = mapJobNode(raw);
-    if (!mapped) continue;
-    const parsed = UpworkItem.safeParse(mapped);
-    if (parsed.success) items.push(parsed.data);
-  }
-
-  return items;
+  return contracts
+    .filter((c: any) => c.status !== "Closed")
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .map((c: any) => mapContractNode(c));
 }

@@ -3,7 +3,7 @@ import { getNotion, getDbId } from "@/lib/notion";
 
 export async function createDemoContracts(count = 10) {
   const notion = getNotion();
-  const dbId = getDbId();
+  const dbId = getDbId("NOTION_DATABASE_ID");
   const now = new Date().toISOString();
   const results: Array<{ ok: true; id: string } | { ok: false; error: string }> = [];
 

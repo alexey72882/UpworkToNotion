@@ -57,18 +57,18 @@ Jobs fetched from Upwork marketplace matching your filters. App writes here.
 | Property | Type |
 |----------|------|
 | `Name` | Title |
+| `Description` | Rich text |
 | `External ID` | Rich text |
 | `Client` | Rich text (client country) |
 | `Value` | Number |
 | `Currency` | Select |
-| `Upwork Link` | URL |
 | `Created` | Date (published date) |
 
 #### 2. Job Feed Filters (`NOTION_JOB_FILTERS_DATABASE_ID`)
 
 Each row is a saved search. App reads this to know what to fetch from Upwork.
 
-| Property | Type | Notes |
+Property | Type | Notes |
 |----------|------|-------|
 | `Name` | Title | Label for the filter (e.g. "Figma UI") |
 | `Skill Expression` | Rich text | Free-text skill query (e.g. `UI UX Figma`) |
