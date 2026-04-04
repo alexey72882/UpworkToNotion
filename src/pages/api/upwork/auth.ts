@@ -21,7 +21,6 @@ export default async function handler(
   url.searchParams.set("client_id", client_id);
   url.searchParams.set("redirect_uri", redirect_uri);
   url.searchParams.set("state", state);
-  url.searchParams.set("scope", "contracts_read jobs_read proposals_read");
 
   res.setHeader(
     "Set-Cookie",
