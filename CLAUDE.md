@@ -204,37 +204,82 @@ Every PR body must include a spec link matching `specs/[0-9]{4}-` — the `spec-
 
 The product spec lives in `specs/specs/0001-upwork-notion-v0.1.md`. The sync pipeline is fully wired up and working end-to-end.
 
-## Current status (as of 2026-04-02)
+## Current status (as of 2026-04-04)
 
 ### What's done
 
 - Full OAuth flow working (auth → callback → tokens saved to Supabase)
-- New Supabase project provisioned (old one expired), `upwork_tokens` table created
-- All env vars updated locally (`.env.local`) and on Vercel
 - Upwork GraphQL schema discovered via `/api/upwork/gql-introspect`
-- `fetchUpworkItems()` in `src/lib/upwork.ts` updated to use real Upwork GraphQL API:
-  - Root query: `vendorProposals(filter, sortAttribute, pagination)`
-  - Fetches active statuses: `Pending, Activated, Accepted, Offered, Hired` — 10 items each
-  - Page size capped at **40** max (Upwork rejects `first > 40` with VJCA-6 error)
-  - Maps real field paths: `marketplaceJobPosting.content.title`, `organization.name`, `terms.chargeRate`, `auditDetails.*.rawValue` (epoch ms)
-- `mapStatus` / `mapType` updated to use actual Upwork status enum values
-- All tests updated and passing (23 tests)
-- **End-to-end sync verified**: Upwork → Zod → Notion working, items visible in Notion DB (`29671440d42e80b6bad5dd9c1a671a28`)
-- **Deployed to Vercel**: production sync working, cron runs daily at 9am UTC (`0 9 * * *`)
-- Next.js updated to 16.2.2 (CVE-2025-66478 fix required for Vercel deploy)
+- Sync pipeline restructured — proposals dropped, replaced with:
+  - **Job feed** (`fetchJobFeed`): reads active filters from Notion filters DB, runs one query per filter, deduplicates by job ID, writes to job feed Notion DB. 10 jobs per filter query (no pagination on this endpoint).
+  - **Contracts dropped**: `contractList` / `vendorContracts` require Upwork partner-level API access regardless of app permissions — blocked permanently unless Upwork grants access.
+- **3 Notion databases** wired up (env vars set locally + Vercel):
+  - `NOTION_JOB_FEED_DATABASE_ID` — filtered job results (output)
+  - `NOTION_JOB_FILTERS_DATABASE_ID` — saved searches (input, read by app)
+  - `NOTION_CONTRACTS_DATABASE_ID` — reserved for future use
+- Notion client pinned to API version `2022-06-28` (SDK default `2025-09-03` removed the `databases/query` endpoint)
+- Job feed filter field mappings discovered and fixed:
+  - `jobType_eq`: `HOURLY` / `FIXED` (not `Hourly`/`Fixed`)
+  - `budgetRange_eq`: `rangeStart` / `rangeEnd` (not `min`/`max`)
+  - `experienceLevel_eq`: `EXPERT` / `INTERMEDIATE` / `ENTRY_LEVEL`
+  - `categoryIds_any`: numeric IDs only — text names silently return 0 results
+  - `Experience Level` in Notion is `multi_select` — only first value used (API accepts one)
+- **End-to-end sync verified on production**: job feed fetching and writing to Notion
+- Deployed to Vercel, cron runs daily at 9am UTC
+
+### Work diary / freelancer profile — discovered, not yet built
+
+The following data is accessible and ready to build:
+
+**Active contract IDs** (needed for work diary):
+```graphql
+{ talentWorkHistory(filter: { personId: "<userId>", status: [ACTIVE] }) {
+    workHistoryList { contract { id title status } }
+} }
+```
+Returns numeric contract IDs (e.g. `41815410`) without needing contract scope.
+
+**Work diary per contract per day** (hours, memos, activity):
+```graphql
+{ workDiaryContract(workDiaryContractInput: { contractId: "<id>", date: "20260403" }) {
+    workDiaryTimeCells { cellDateTime { rawValue } memo manual overtime activityLevel }
+} }
+```
+Each cell = 10 minutes. Date format: `yyyyMMdd`.
+
+**Weekly hours across contracts**:
+```graphql
+{ workDays(workdaysInput: { contractIds: ["41815410"], timeRange: { rangeStart: "20260330", rangeEnd: "20260406" } }) {
+    workDays
+} }
+```
+Returns list of days with activity. Date format: `yyyyMMdd`.
+
+**Freelancer profile aggregates** (lifetime stats):
+```graphql
+{ talentProfile(personId: "<userId>") {
+    profiles { profileAggregates { totalEarnings totalHours totalJobs topRatedStatus totalFeedback lastWorkedOn } personAvailability { capacity } }
+} }
+```
+
+**Weekly earnings**: blocked — requires Payments scope (`transactionHistory` returns "Authorization failed").
+
+**User ID**: `540749103839944704` (Alexey)
+**Organization ID**: `540749103848333313`
 
 ### Known quirks
 
-- `vendorProposals` pagination limit is 40 (`first: 41+` returns VJCA-6 error, no pagination cursor yet)
-- `sync.ts` response includes `fetched` count alongside `created/updated/skipped`
-- `sync.ts` requires `export const config = { runtime: "nodejs" }` — without it the route may use edge runtime and behave differently
+- `vendorProposals` pagination limit is 40 (`first: 41+` returns VJCA-6 error)
+- `marketplaceJobPostingsSearch` has no pagination — always returns 10 results per query
+- Notion SDK v5 ships with API version `2025-09-03` which removed `databases/query` — must pass `notionVersion: "2022-06-28"` when creating the client
+- Upwork OAuth scopes are configured at app level in developer portal, not via `scope` param in auth URL — passing `scope` returns `invalid_scope` error
 
 ### What's next
 
-- Expand statuses to include `Archived, Declined, Withdrawn` once ready for full history
-- Add cursor-based pagination to fetch more than 10 per status (575+ Hired proposals exist)
-- Improve Notion layout — views, filters, grouping by stage
-- Consider notifications when proposal status changes
+- Fetch active contract IDs via `talentWorkHistory` → query work diary for each → sync weekly hours to a Notion page or dashboard
+- Freelancer profile snapshot (total earnings, JSS, top rated) → sync to Notion
+- Improve Notion job feed layout — views, filters by experience level / budget
+- Consider notifications when new matching jobs appear
 
 
 ## Coding standards
