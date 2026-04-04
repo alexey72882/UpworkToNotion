@@ -204,18 +204,32 @@ export type JobFeedResult = {
   created?: string;
 };
 
+// Maps Notion "Hourly"/"Fixed" select values to Upwork enum
+function toContractTypeEnum(val: string): string {
+  return val.toUpperCase(); // "Hourly" → "HOURLY", "Fixed" → "FIXED"
+}
+
+// Maps Notion experience level to Upwork enum: "Expert" → "EXPERT", "Intermediate" → "INTERMEDIATE", "Entry" → "ENTRY_LEVEL"
+function toExperienceEnum(val: string): string {
+  if (val === "Entry") return "ENTRY_LEVEL";
+  return val.toUpperCase();
+}
+
 function buildJobFilter(filter: JobFilter): string {
   const parts: string[] = [];
   if (filter.skillExpression) parts.push(`skillExpression_eq: ${JSON.stringify(filter.skillExpression)}`);
-  if (filter.categoryIds?.length) parts.push(`categoryIds_any: [${filter.categoryIds.map(id => JSON.stringify(id)).join(", ")}]`);
-  if (filter.occupationIds?.length) parts.push(`occupationIds_any: [${filter.occupationIds.map(id => JSON.stringify(id)).join(", ")}]`);
-  if (filter.jobType) parts.push(`jobType_eq: ${filter.jobType}`);
+  // categoryIds/occupationIds must be numeric — skip text values like category names
+  const numericCatIds = (filter.categoryIds ?? []).filter(id => /^\d+$/.test(id));
+  if (numericCatIds.length) parts.push(`categoryIds_any: [${numericCatIds.join(", ")}]`);
+  const numericOccIds = (filter.occupationIds ?? []).filter(id => /^\d+$/.test(id));
+  if (numericOccIds.length) parts.push(`occupationIds_any: [${numericOccIds.join(", ")}]`);
+  if (filter.jobType) parts.push(`jobType_eq: ${toContractTypeEnum(filter.jobType)}`);
   if (filter.verifiedPaymentOnly) parts.push(`verifiedPaymentOnly_eq: true`);
-  if (filter.experienceLevel) parts.push(`experienceLevel_eq: ${filter.experienceLevel.toUpperCase()}_LEVEL`);
+  if (filter.experienceLevel) parts.push(`experienceLevel_eq: ${toExperienceEnum(filter.experienceLevel)}`);
   if (filter.minBudget !== undefined || filter.maxBudget !== undefined) {
     const budgetParts: string[] = [];
-    if (filter.minBudget !== undefined) budgetParts.push(`min: ${filter.minBudget}`);
-    if (filter.maxBudget !== undefined) budgetParts.push(`max: ${filter.maxBudget}`);
+    if (filter.minBudget !== undefined) budgetParts.push(`rangeStart: ${filter.minBudget}`);
+    if (filter.maxBudget !== undefined) budgetParts.push(`rangeEnd: ${filter.maxBudget}`);
     parts.push(`budgetRange_eq: { ${budgetParts.join(", ")} }`);
   }
   return parts.join("\n    ");

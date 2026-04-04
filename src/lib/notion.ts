@@ -6,7 +6,7 @@ function getNotion(): Client {
   if (!_notion) {
     const token = process.env.NOTION_TOKEN;
     if (!token) throw new Error("NOTION_TOKEN is required");
-    _notion = new Client({ auth: token });
+    _notion = new Client({ auth: token, notionVersion: "2022-06-28" });
   }
   return _notion;
 }
@@ -41,9 +41,7 @@ export async function readJobFilters(): Promise<JobFilter[]> {
   const resp: any = await notion.request({
     path: `databases/${dbId}/query`,
     method: "post",
-    body: {
-      filter: { property: "Active", checkbox: { equals: true } },
-    },
+    body: { filter: { property: "Active", checkbox: { equals: true } } },
   });
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -59,6 +57,9 @@ export async function readJobFilters(): Promise<JobFilter[]> {
     const rawCatIds = text("Category IDs");
     const rawOccIds = text("Occupation IDs");
 
+    // Experience Level is multi_select — take first value only (API accepts one)
+    const expLevels: string[] = (p["Experience Level"]?.multi_select ?? []).map((s: { name: string }) => s.name);
+
     return {
       name: p["Name"]?.title?.[0]?.plain_text?.trim() ?? "Unnamed",
       skillExpression: text("Skill Expression"),
@@ -67,7 +68,7 @@ export async function readJobFilters(): Promise<JobFilter[]> {
       jobType: sel("Job Type") as JobFilter["jobType"] | undefined,
       minBudget: num("Min Budget"),
       maxBudget: num("Max Budget"),
-      experienceLevel: sel("Experience Level") as JobFilter["experienceLevel"] | undefined,
+      experienceLevel: expLevels[0] as JobFilter["experienceLevel"] | undefined,
       verifiedPaymentOnly: p["Verified Payment Only"]?.checkbox ?? undefined,
     };
   });
