@@ -106,14 +106,14 @@ function buildJobFeedProps(item: JobFeedItem): Record<string, any> {
   return props;
 }
 
-async function findPageByExternalId(dbId: string, externalId: string): Promise<string | null> {
+async function findPageByExternalId(dbId: string, externalId: string, propName = "External ID"): Promise<string | null> {
   const notion = getNotion();
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const resp: any = await notion.request({
       path: `databases/${dbId}/query`,
       method: "post",
-      body: { filter: { property: "External ID", rich_text: { equals: externalId } } },
+      body: { filter: { property: propName, rich_text: { equals: externalId } } },
     });
     if (resp?.results?.length) return resp.results[0].id as string;
   } catch {
@@ -140,40 +140,34 @@ export async function upsertJobFeedItem(item: JobFeedItem): Promise<"created" | 
 // Contracts DB upsert
 // ---------------------------------------------------------------------------
 
-export type ContractItem = {
-  externalId: string;
-  title: string;
-  client?: string;
-  contractType?: "Hourly" | "Fixed";
+export type ContractDayItem = {
+  externalId: string;    // "contract-41815410-20260406"
+  weekName: string;      // "Week 15"
+  contractName: string;
+  date: string;          // "2026-04-06"
   rate?: number;
-  currency?: string;
-  status?: string;
-  startDate?: string;
-  url?: string;
+  minutes: number;       // integer: cells * 10
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function buildContractProps(item: ContractItem): Record<string, any> {
+function buildContractDayProps(item: ContractDayItem): Record<string, any> {
   const props: Record<string, any> = {
-    Name: { title: [{ text: { content: item.title } }] },
-    "External ID": { rich_text: [{ text: { content: item.externalId } }] },
+    Name: { title: [{ text: { content: item.weekName } }] },
+    ID: { rich_text: [{ text: { content: item.externalId } }] },
+    "Contract name": { rich_text: [{ text: { content: item.contractName } }] },
+    Date: { date: { start: item.date } },
+    Minutes: { number: item.minutes },
   };
-  if (item.client) props["Client"] = { rich_text: [{ text: { content: item.client } }] };
-  if (item.contractType) props["Contract Type"] = { select: { name: item.contractType } };
-  if (item.rate !== undefined) props["Rate"] = { number: item.rate };
-  if (item.currency) props["Currency"] = { select: { name: item.currency } };
-  if (item.status) props["Status"] = { select: { name: item.status } };
-  if (item.startDate) props["Start Date"] = { date: { start: item.startDate } };
-  if (item.url) props["Upwork Link"] = { url: item.url };
+  if (item.rate !== undefined) props.Rate = { number: item.rate };
   return props;
 }
 
-export async function upsertContractItem(item: ContractItem): Promise<"created" | "updated"> {
+export async function upsertContractDayItem(item: ContractDayItem): Promise<"created" | "updated"> {
   const notion = getNotion();
   const dbId = getDbId("NOTION_CONTRACTS_DATABASE_ID");
-  const props = buildContractProps(item);
+  const props = buildContractDayProps(item);
 
-  const existingId = await findPageByExternalId(dbId, item.externalId);
+  const existingId = await findPageByExternalId(dbId, item.externalId, "ID");
   if (existingId) {
     await notion.pages.update({ page_id: existingId, properties: props as any });
     return "updated";

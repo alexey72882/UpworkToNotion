@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { readJobFilters, upsertJobFeedItem } from "@/lib/notion";
-import { fetchJobFeed } from "@/lib/upwork";
+import { readJobFilters, upsertJobFeedItem, upsertContractDayItem } from "@/lib/notion";
+import { fetchJobFeed, fetchContractDays, getCurrentWeekRange } from "@/lib/upwork";
 import { requireAuth } from "@/lib/requireAuth";
 import { logger } from "@/lib/logger";
 
@@ -9,6 +9,7 @@ export const config = { runtime: "nodejs" };
 type Ok = {
   ok: true;
   jobs: { fetched: number; created: number; updated: number; skipped: number };
+  contracts: { fetched: number; created: number; updated: number; skipped: number };
   durationMs: number;
 };
 
@@ -32,11 +33,14 @@ export default async function handler(
   logger.info("sync started");
 
   try {
-    // Read filters from Notion, then fetch jobs + contracts in parallel
     const filters = await readJobFilters();
     logger.info({ filterCount: filters.length }, "loaded job filters");
 
-    const jobItems = await fetchJobFeed(filters);
+    const { rangeStart, rangeEnd } = getCurrentWeekRange();
+    const [jobItems, contractItems] = await Promise.all([
+      fetchJobFeed(filters),
+      fetchContractDays(rangeStart, rangeEnd),
+    ]);
 
     let jobCreated = 0, jobUpdated = 0, jobSkipped = 0;
     for (const item of jobItems) {
@@ -49,12 +53,24 @@ export default async function handler(
       }
     }
 
+    let contractCreated = 0, contractUpdated = 0, contractSkipped = 0;
+    for (const item of contractItems) {
+      try {
+        const result = await upsertContractDayItem(item);
+        if (result === "created") contractCreated++; else contractUpdated++;
+      } catch (err) {
+        contractSkipped++;
+        logger.warn({ externalId: item.externalId, err }, "contract upsert failed, skipping");
+      }
+    }
+
     const durationMs = Date.now() - start;
-    logger.info({ jobCreated, jobUpdated, jobSkipped, durationMs }, "sync completed");
+    logger.info({ jobCreated, jobUpdated, jobSkipped, contractCreated, contractUpdated, contractSkipped, durationMs }, "sync completed");
 
     return res.status(200).json({
       ok: true,
       jobs: { fetched: jobItems.length, created: jobCreated, updated: jobUpdated, skipped: jobSkipped },
+      contracts: { fetched: contractItems.length, created: contractCreated, updated: contractUpdated, skipped: contractSkipped },
       durationMs,
     });
   } catch (err) {

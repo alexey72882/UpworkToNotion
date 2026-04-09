@@ -316,82 +316,135 @@ export async function fetchJobFeed(filters: JobFilter[]): Promise<JobFeedResult[
 }
 
 // ---------------------------------------------------------------------------
-// Contracts
+// Contracts — per-day hours with batched GraphQL
 // ---------------------------------------------------------------------------
 
-export type UpworkContract = {
-  externalId: string;
-  title: string;
-  client?: string;
-  contractType?: "Hourly" | "Fixed";
+export type UpworkContractDay = {
+  externalId: string;    // "contract-41815410-20260406"
+  weekName: string;      // "Week 15"
+  contractName: string;
+  date: string;          // "2026-04-06"
   rate?: number;
-  currency?: string;
-  status?: string;
-  startDate?: string;
-  url?: string;
+  minutes: number;       // integer: cells * 10
 };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function mapContractNode(node: any): UpworkContract {
-  const hourlyRate = node.terms?.hourlyTerms?.chargeRate?.rawValue;
-  const fixedAmount = node.terms?.fixedPriceTerms?.amount?.rawValue;
-  const rate = hourlyRate ? Number(hourlyRate) : fixedAmount ? Number(fixedAmount) : undefined;
-  const currency = node.terms?.hourlyTerms?.chargeRate?.currency
-    ?? node.terms?.fixedPriceTerms?.amount?.currency
-    ?? undefined;
-  const contractType = hourlyRate ? "Hourly" : fixedAmount ? "Fixed" : undefined;
-
-  return {
-    externalId: `contract-${node.id ?? ""}`,
-    title: String(node.title ?? "Untitled"),
-    client: node.clientOrganization?.name ?? undefined,
-    contractType,
-    rate,
-    currency,
-    status: node.status ?? undefined,
-    startDate: node.startDate ?? undefined,
-    url: node.id ? `https://www.upwork.com/contracts/${node.id}` : undefined,
-  };
+export function getCurrentWeekRange(): { rangeStart: string; rangeEnd: string } {
+  const now = new Date();
+  const day = now.getUTCDay(); // 0=Sun, 1=Mon..6=Sat
+  const monday = new Date(now);
+  monday.setUTCDate(now.getUTCDate() - (day === 0 ? 6 : day - 1));
+  const fmt = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, "");
+  return { rangeStart: fmt(monday), rangeEnd: fmt(now) };
 }
 
-export async function fetchContracts(): Promise<UpworkContract[]> {
+function yyyymmddToIso(d: string): string {
+  return `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`;
+}
+
+function getISOWeek(isoDate: string): number {
+  const d = new Date(isoDate);
+  const utc = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  utc.setUTCDate(utc.getUTCDate() + 4 - (utc.getUTCDay() || 7));
+  const yearStart = new Date(Date.UTC(utc.getUTCFullYear(), 0, 1));
+  return Math.ceil((((utc.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+}
+
+const DIARY_BATCH_SIZE = 10;
+
+export async function fetchContractDays(fromDate: string, toDate: string): Promise<UpworkContractDay[]> {
   const token = await getValidAccessToken();
   if (!token) throw new Error("No valid Upwork access token");
 
-  const query = `{
-  contractList {
-    contracts {
-      id
-      title
-      status
-      startDate
-      clientOrganization { name }
-      terms {
-        hourlyTerms { chargeRate { rawValue currency } }
-        fixedPriceTerms { amount { rawValue currency } }
+  const personId = process.env.UPWORK_PERSON_ID;
+  if (!personId) {
+    logger.info("UPWORK_PERSON_ID not set, skipping contracts");
+    return [];
+  }
+
+  // Step 1: Get active contracts with rates (1 request)
+  const historyJson = await gqlFetch(token, `{
+    talentWorkHistory(filter: { personId: "${personId}", status: [ACTIVE] }) {
+      workHistoryList { contract { id title terms { hourlyRate fixedAmount } } }
+    }
+  }`);
+
+  if (historyJson?.errors) {
+    logger.warn({ errors: historyJson.errors }, "talentWorkHistory errors");
+    return [];
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const workHistoryList: any[] = historyJson?.data?.talentWorkHistory?.workHistoryList ?? [];
+  if (workHistoryList.length === 0) return [];
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const contracts = workHistoryList.map(({ contract }: any) => {
+    const rawRate = contract?.terms?.hourlyRate ?? contract?.terms?.fixedAmount;
+    return {
+      id: String(contract.id),
+      title: String(contract.title ?? "Untitled"),
+      rate: rawRate ? Number(rawRate) : undefined,
+    };
+  });
+  logger.info({ count: contracts.length }, "fetched active contracts");
+
+  // Step 2: All workDays queries in 1 batched request
+  const workDaysQuery = `{
+    ${contracts.map(c =>
+      `c${c.id}: workDays(workdaysInput: { contractIds: ["${c.id}"], timeRange: { rangeStart: "${fromDate}", rangeEnd: "${toDate}" } }) { workDays }`
+    ).join("\n    ")}
+  }`;
+  const workDaysJson = await gqlFetch(token, workDaysQuery);
+
+  // Collect all (contractId, date) pairs
+  const pairs: Array<{ contractId: string; date: string }> = [];
+  for (const c of contracts) {
+    const days: string[] = workDaysJson?.data?.[`c${c.id}`]?.workDays ?? [];
+    for (const day of days) pairs.push({ contractId: c.id, date: day });
+  }
+  logger.info({ pairCount: pairs.length }, "contract-day pairs to fetch");
+
+  if (pairs.length === 0) return [];
+
+  // Step 3: Batch diary queries in groups of DIARY_BATCH_SIZE
+  const cellCounts: Record<string, number> = {};
+  for (let i = 0; i < pairs.length; i += DIARY_BATCH_SIZE) {
+    const batch = pairs.slice(i, i + DIARY_BATCH_SIZE);
+    const diaryQuery = `{
+      ${batch.map(({ contractId, date }) =>
+        `d${contractId}_${date}: workDiaryContract(workDiaryContractInput: { contractId: "${contractId}", date: "${date}" }) { workDiaryTimeCells { cellDateTime { rawValue } } }`
+      ).join("\n      ")}
+    }`;
+    try {
+      const diaryJson = await gqlFetch(token, diaryQuery);
+      if (diaryJson?.errors) logger.warn({ errors: diaryJson.errors }, "diary batch had GraphQL errors");
+      for (const { contractId, date } of batch) {
+        const cells = diaryJson?.data?.[`d${contractId}_${date}`]?.workDiaryTimeCells ?? [];
+        cellCounts[`${contractId}-${date}`] = cells.length;
       }
+    } catch (err) {
+      logger.error({ batchIndex: i, err }, "diary batch failed, skipping");
+    }
+    logger.info({ batch: Math.floor(i / DIARY_BATCH_SIZE) + 1, total: Math.ceil(pairs.length / DIARY_BATCH_SIZE) }, "diary batch done");
+  }
+
+  // Build results
+  const results: UpworkContractDay[] = [];
+  for (const c of contracts) {
+    const days: string[] = workDaysJson?.data?.[`c${c.id}`]?.workDays ?? [];
+    for (const day of days) {
+      const cells = cellCounts[`${c.id}-${day}`] ?? 0;
+      const isoDate = yyyymmddToIso(day);
+      results.push({
+        externalId: `contract-${c.id}-${day}`,
+        weekName: `Week ${getISOWeek(isoDate)}`,
+        contractName: c.title,
+        date: isoDate,
+        rate: c.rate,
+        minutes: cells * 10,
+      });
     }
   }
-}`;
 
-  let json;
-  try {
-    json = await gqlFetch(token, query);
-  } catch (err) {
-    logger.error({ err }, "Contracts API error");
-    return [];
-  }
-
-  if (json?.errors) {
-    logger.warn({ errors: json.errors }, "Contracts GraphQL errors");
-    return [];
-  }
-
-  const contracts = json?.data?.contractList?.contracts ?? [];
-  logger.info({ count: contracts.length }, "fetched contracts");
-
-  return contracts
-    .filter((c: any) => c.status !== "Closed")
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .map((c: any) => mapContractNode(c));
+  return results;
 }

@@ -83,19 +83,13 @@ Property | Type | Notes |
 
 #### 3. Active Contracts (`NOTION_CONTRACTS_DATABASE_ID`)
 
-Your active Upwork contracts. App writes here.
+Your active Upwork contracts with weekly hours. App writes here.
 
 | Property | Type |
 |----------|------|
 | `Name` | Title |
 | `External ID` | Rich text |
-| `Client` | Rich text |
-| `Contract Type` | Select (`Hourly`, `Fixed`) |
-| `Rate` | Number |
-| `Currency` | Select |
-| `Status` | Select (`Active`, `Paused`, `Closed`) |
-| `Start Date` | Date |
-| `Upwork Link` | URL |
+| `Hours This Week` | Number |
 
 #### Setting the env vars
 
@@ -132,6 +126,7 @@ npx vercel --prod
 | `UPWORK_CLIENT_ID` | OAuth flow |
 | `UPWORK_CLIENT_SECRET` | OAuth token exchange & refresh |
 | `UPWORK_REDIRECT_URI` | OAuth callback URL |
+| `UPWORK_PERSON_ID` | Freelancer's numeric Upwork user ID — used by `fetchContracts()` to query work diary |
 | `LOG_LEVEL` | Pino log level (default: `info`) |
 | `API_SECRET` | Auth for protected API routes (`Authorization: Bearer <secret>`) |
 
@@ -204,68 +199,37 @@ Every PR body must include a spec link matching `specs/[0-9]{4}-` — the `spec-
 
 The product spec lives in `specs/specs/0001-upwork-notion-v0.1.md`. The sync pipeline is fully wired up and working end-to-end.
 
-## Current status (as of 2026-04-04)
+## Current status (as of 2026-04-03)
 
 ### What's done
 
 - Full OAuth flow working (auth → callback → tokens saved to Supabase)
 - Upwork GraphQL schema discovered via `/api/upwork/gql-introspect`
-- Sync pipeline restructured — proposals dropped, replaced with:
-  - **Job feed** (`fetchJobFeed`): reads active filters from Notion filters DB, runs one query per filter, deduplicates by job ID, writes to job feed Notion DB. 10 jobs per filter query (no pagination on this endpoint).
-  - **Contracts dropped**: `contractList` / `vendorContracts` require Upwork partner-level API access regardless of app permissions — blocked permanently unless Upwork grants access.
+- Sync pipeline: two parallel tracks per cron run:
+  1. **Job feed** (`fetchJobFeed`): reads active filters from Notion filters DB, runs one query per filter, deduplicates by job ID, writes to job feed Notion DB. 10 jobs per filter query (no pagination on this endpoint).
+  2. **Contracts + hours** (`fetchContracts`): 3-step work diary approach (see below) — writes contract name + "Hours This Week" to `NOTION_CONTRACTS_DATABASE_ID`.
+- `contractList` / `vendorContracts` permanently blocked (Upwork partner API scope). Workaround: use `talentWorkHistory` for active contract IDs.
 - **3 Notion databases** wired up (env vars set locally + Vercel):
   - `NOTION_JOB_FEED_DATABASE_ID` — filtered job results (output)
   - `NOTION_JOB_FILTERS_DATABASE_ID` — saved searches (input, read by app)
-  - `NOTION_CONTRACTS_DATABASE_ID` — reserved for future use
+  - `NOTION_CONTRACTS_DATABASE_ID` — active contracts + hours this week
 - Notion client pinned to API version `2022-06-28` (SDK default `2025-09-03` removed the `databases/query` endpoint)
-- Job feed filter field mappings discovered and fixed:
-  - `jobType_eq`: `HOURLY` / `FIXED` (not `Hourly`/`Fixed`)
-  - `budgetRange_eq`: `rangeStart` / `rangeEnd` (not `min`/`max`)
+- Job feed filter field mappings:
+  - `jobType_eq`: `HOURLY` / `FIXED`
+  - `budgetRange_eq`: `rangeStart` / `rangeEnd`
   - `experienceLevel_eq`: `EXPERT` / `INTERMEDIATE` / `ENTRY_LEVEL`
   - `categoryIds_any`: numeric IDs only — text names silently return 0 results
-  - `Experience Level` in Notion is `multi_select` — only first value used (API accepts one)
-- **End-to-end sync verified on production**: job feed fetching and writing to Notion
+  - `Experience Level` in Notion is `multi_select` — only first value used
 - Deployed to Vercel, cron runs daily at 9am UTC
 
-### Work diary / freelancer profile — discovered, not yet built
+### Contracts sync — 3-step work diary approach
 
-The following data is accessible and ready to build:
+`fetchContracts()` in `src/lib/upwork.ts`:
+1. `talentWorkHistory(filter: { personId: $UPWORK_PERSON_ID, status: [ACTIVE] })` → active contract IDs + titles
+2. Per contract: `workDays(workdaysInput: { contractIds: [...], timeRange: { rangeStart, rangeEnd } })` → days with activity this week (Mon–Sun UTC, yyyyMMdd format)
+3. Per active day: `workDiaryContract(workDiaryContractInput: { contractId, date })` → count `workDiaryTimeCells` (each = 10 min) → convert to hours
 
-**Active contract IDs** (needed for work diary):
-```graphql
-{ talentWorkHistory(filter: { personId: "<userId>", status: [ACTIVE] }) {
-    workHistoryList { contract { id title status } }
-} }
-```
-Returns numeric contract IDs (e.g. `41815410`) without needing contract scope.
-
-**Work diary per contract per day** (hours, memos, activity):
-```graphql
-{ workDiaryContract(workDiaryContractInput: { contractId: "<id>", date: "20260403" }) {
-    workDiaryTimeCells { cellDateTime { rawValue } memo manual overtime activityLevel }
-} }
-```
-Each cell = 10 minutes. Date format: `yyyyMMdd`.
-
-**Weekly hours across contracts**:
-```graphql
-{ workDays(workdaysInput: { contractIds: ["41815410"], timeRange: { rangeStart: "20260330", rangeEnd: "20260406" } }) {
-    workDays
-} }
-```
-Returns list of days with activity. Date format: `yyyyMMdd`.
-
-**Freelancer profile aggregates** (lifetime stats):
-```graphql
-{ talentProfile(personId: "<userId>") {
-    profiles { profileAggregates { totalEarnings totalHours totalJobs topRatedStatus totalFeedback lastWorkedOn } personAvailability { capacity } }
-} }
-```
-
-**Weekly earnings**: blocked — requires Payments scope (`transactionHistory` returns "Authorization failed").
-
-**User ID**: `540749103839944704` (Alexey)
-**Organization ID**: `540749103848333313`
+**User ID**: `540749103839944704` (Alexey, stored as `UPWORK_PERSON_ID`)
 
 ### Known quirks
 
@@ -273,10 +237,12 @@ Returns list of days with activity. Date format: `yyyyMMdd`.
 - `marketplaceJobPostingsSearch` has no pagination — always returns 10 results per query
 - Notion SDK v5 ships with API version `2025-09-03` which removed `databases/query` — must pass `notionVersion: "2022-06-28"` when creating the client
 - Upwork OAuth scopes are configured at app level in developer portal, not via `scope` param in auth URL — passing `scope` returns `invalid_scope` error
+- `workDays` / `workDiaryContract` date format: `yyyyMMdd` (not ISO)
+- Weekly earnings blocked — requires Payments scope (`transactionHistory` returns "Authorization failed")
 
 ### What's next
 
-- Fetch active contract IDs via `talentWorkHistory` → query work diary for each → sync weekly hours to a Notion page or dashboard
+- Add "Hours This Week" Number property to the Notion Contracts DB (app writes it automatically once the property exists)
 - Freelancer profile snapshot (total earnings, JSS, top rated) → sync to Notion
 - Improve Notion job feed layout — views, filters by experience level / budget
 - Consider notifications when new matching jobs appear

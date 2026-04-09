@@ -4,5 +4,8 @@
       "path": "/api/sync",
       "schedule": "0 9 * * *"
     }
-  ]
+  ],
+  "functions": {
+    "src/pages/api/contracts-history.ts": { "maxDuration": 60 }
+  }
 }
