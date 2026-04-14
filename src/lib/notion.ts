@@ -24,13 +24,21 @@ function getDbId(envVar: string): string {
 export type JobFilter = {
   name: string;
   skillExpression?: string;
-  categoryIds?: string[];
-  occupationIds?: string[];
+  categoryIds?: string[];        // category labels — mapped to IDs in upwork.ts
+  subcategoryIds?: string[];     // subcategory labels — mapped to IDs in upwork.ts
   jobType?: "Hourly" | "Fixed";
   minBudget?: number;
   maxBudget?: number;
   experienceLevel?: "Entry" | "Intermediate" | "Expert";
   verifiedPaymentOnly?: boolean;
+  duration?: string[];           // "Week" | "Month" | "Quarter" | "Semester" | "Ongoing"
+  workload?: string;             // "Full Time" | "Part Time" | "As Needed"
+  daysPosted?: number;
+  maxProposals?: number;
+  minClientHires?: number;
+  minClientRating?: number;
+  previousClientsOnly?: boolean;
+  enterpriseOnly?: boolean;
 };
 
 export async function readJobFilters(): Promise<JobFilter[]> {
@@ -53,23 +61,32 @@ export async function readJobFilters(): Promise<JobFilter[]> {
       p[key]?.number ?? undefined;
     const sel = (key: string) =>
       p[key]?.select?.name ?? undefined;
+    const multiSel = (key: string): string[] =>
+      (p[key]?.multi_select ?? []).map((s: { name: string }) => s.name);
 
-    const rawCatIds = text("Category IDs");
-    const rawOccIds = text("Occupation IDs");
-
-    // Experience Level is multi_select — take first value only (API accepts one)
-    const expLevels: string[] = (p["Experience Level"]?.multi_select ?? []).map((s: { name: string }) => s.name);
+    const categoryLabels = multiSel("Category");
+    const subcategoryLabels = multiSel("Subcategory");
+    const expLevels = multiSel("Experience Level");
+    const durationVals = multiSel("Duration");
 
     return {
       name: p["Name"]?.title?.[0]?.plain_text?.trim() ?? "Unnamed",
       skillExpression: text("Skill Expression"),
-      categoryIds: rawCatIds ? rawCatIds.split(",").map((s: string) => s.trim()).filter(Boolean) : undefined,
-      occupationIds: rawOccIds ? rawOccIds.split(",").map((s: string) => s.trim()).filter(Boolean) : undefined,
+      categoryIds: categoryLabels.length ? categoryLabels : undefined,
+      subcategoryIds: subcategoryLabels.length ? subcategoryLabels : undefined,
       jobType: sel("Job Type") as JobFilter["jobType"] | undefined,
       minBudget: num("Min Budget"),
       maxBudget: num("Max Budget"),
       experienceLevel: expLevels[0] as JobFilter["experienceLevel"] | undefined,
-      verifiedPaymentOnly: p["Verified Payment Only"]?.checkbox ?? undefined,
+      verifiedPaymentOnly: p["Verified Payment Only"]?.checkbox || undefined,
+      duration: durationVals.length ? durationVals : undefined,
+      workload: sel("Workload") || undefined,
+      daysPosted: num("Days Posted"),
+      maxProposals: num("Max Proposals"),
+      minClientHires: num("Min Client Hires"),
+      minClientRating: num("Min Client Rating"),
+      previousClientsOnly: p["Previous Clients Only"]?.checkbox || undefined,
+      enterpriseOnly: p["Enterprise Only"]?.checkbox || undefined,
     };
   });
 }
@@ -84,9 +101,11 @@ export type JobFeedItem = {
   description?: string;
   client?: string;
   value?: number;
-  currency?: string;
   url?: string;
   created?: string;
+  jobType?: "Hourly" | "Fixed";
+  applied?: boolean;
+  proposalUrl?: string;
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -100,9 +119,11 @@ function buildJobFeedProps(item: JobFeedItem): Record<string, any> {
   if (item.client)
     props["Client"] = { rich_text: [{ text: { content: item.client } }] };
   if (item.value !== undefined) props["Value"] = { number: item.value };
-  if (item.currency) props["Currency"] = { select: { name: item.currency } };
   if (item.url) props["Upwork Link"] = { url: item.url };
   if (item.created) props["Created"] = { date: { start: item.created } };
+  if (item.jobType) props["Job Type"] = { select: { name: item.jobType } };
+  if (item.applied !== undefined) props["Applied"] = { checkbox: item.applied };
+  if (item.proposalUrl) props["Proposal link"] = { url: item.proposalUrl };
   return props;
 }
 
@@ -164,7 +185,7 @@ function buildContractDayProps(item: ContractDayItem): Record<string, any> {
 
 export async function upsertContractDayItem(item: ContractDayItem): Promise<"created" | "updated"> {
   const notion = getNotion();
-  const dbId = getDbId("NOTION_CONTRACTS_DATABASE_ID");
+  const dbId = getDbId("NOTION_DIARY_DATABASE_ID");
   const props = buildContractDayProps(item);
 
   const existingId = await findPageByExternalId(dbId, item.externalId, "ID");

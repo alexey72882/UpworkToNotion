@@ -199,57 +199,173 @@ export type JobFeedResult = {
   description?: string;
   client?: string;
   value?: number;
-  currency?: string;
   url?: string;
   created?: string;
+  jobType?: "Hourly" | "Fixed";
+  applied: boolean;
+  proposalUrl?: string;
 };
 
-// Maps Notion "Hourly"/"Fixed" select values to Upwork enum
-function toContractTypeEnum(val: string): string {
-  return val.toUpperCase(); // "Hourly" → "HOURLY", "Fixed" → "FIXED"
-}
+const CATEGORY_ID_MAP: Record<string, string> = {
+  "Web / Mobile & Software Dev": "531770282580668418",
+  "Design & Creative":          "531770282580668421",
+  "IT & Networking":            "531770282580668419",
+  "Sales & Marketing":          "531770282580668422",
+  "Data Science & Analytics":   "531770282580668420",
+  "Writing":                    "531770282580668423",
+  "Engineering & Architecture": "531770282584862722",
+  "Accounting & Consulting":    "531770282584862721",
+  "Admin Support":              "531770282580668416",
+  "Customer Service":           "531770282580668417",
+  "Legal":                      "531770282584862723",
+  "Translation":                "531770282584862720",
+};
 
-// Maps Notion experience level to Upwork enum: "Expert" → "EXPERT", "Intermediate" → "INTERMEDIATE", "Entry" → "ENTRY_LEVEL"
-function toExperienceEnum(val: string): string {
-  if (val === "Entry") return "ENTRY_LEVEL";
-  return val.toUpperCase();
-}
+const SUBCATEGORY_ID_MAP: Record<string, string> = {
+  // Dev › ...
+  "Dev › Web Development":                          "531770282584862733",
+  "Dev › Web & Mobile Design":                      "531770282589057029",
+  "Dev › Mobile Development":                       "531770282589057024",
+  "Dev › Desktop Application Development":          "531770282589057025",
+  "Dev › Ecommerce Development":                    "531770282589057026",
+  "Dev › Game Design & Development":                "531770282589057027",
+  "Dev › AI Apps & Integration":                    "1737190722360750082",
+  "Dev › Blockchain, NFT & Cryptocurrency":         "1517518458442309632",
+  "Dev › Scripts & Utilities":                      "531770282589057028",
+  "Dev › Product Management & Scrum":               "531770282589057030",
+  "Dev › QA Testing":                               "531770282589057031",
+  "Dev › Other - Software Development":             "531770282589057032",
+  // Design › ...
+  "Design › Art & Illustration":                       "531770282593251335",
+  "Design › Audio & Music Production":                 "531770282593251341",
+  "Design › Branding & Logo Design":                   "1044578476142100480",
+  "Design › NFT, AR/VR & Game Art":                    "1356688560628174848",
+  "Design › Graphic, Editorial & Presentation Design": "531770282593251334",
+  "Design › Performing Arts":                          "1356688565288046592",
+  "Design › Photography":                              "531770282593251340",
+  "Design › Product Design":                           "531770282601639953",
+  "Design › Video & Animation":                        "1356688570056970240",
+  // IT › ...
+  "IT › Database Management & Administration":     "531770282589057033",
+  "IT › ERP/CRM Software":                         "531770282589057034",
+  "IT › Information Security & Compliance":        "531770282589057036",
+  "IT › Network & System Administration":          "531770282589057035",
+  "IT › DevOps & Solution Architecture":           "531770282589057037",
+  // Marketing › ...
+  "Marketing › Digital Marketing":                        "531770282597445636",
+  "Marketing › Lead Generation & Telemarketing":          "531770282597445634",
+  "Marketing › Marketing, PR & Brand Strategy":           "531770282593251343",
+  // Data › ...
+  "Data › Data Analysis & Testing":                  "531770282593251330",
+  "Data › Data Extraction/ETL":                      "531770282593251331",
+  "Data › Data Mining & Management":                 "531770282589057038",
+  "Data › AI & Machine Learning":                    "531770282593251329",
+  // Writing › ...
+  "Writing › Sales & Marketing Copywriting":            "1534904462131675136",
+  "Writing › Content Writing":                          "1301900640421842944",
+  "Writing › Editing & Proofreading Services":          "531770282597445644",
+  "Writing › Professional & Business Writing":          "531770282597445646",
+  // Engineering › ...
+  "Engineering › Building & Landscape Architecture":        "531770282601639949",
+  "Engineering › Chemical Engineering":                     "531770282605834240",
+  "Engineering › Civil & Structural Engineering":           "531770282601639950",
+  "Engineering › Contract Manufacturing":                   "531770282605834241",
+  "Engineering › Electrical & Electronic Engineering":      "531770282601639951",
+  "Engineering › Interior & Trade Show Design":             "531770282605834242",
+  "Engineering › Energy & Mechanical Engineering":          "531770282601639952",
+  "Engineering › Physical Sciences":                        "1301900647896092672",
+  "Engineering › 3D Modeling & CAD":                        "531770282601639948",
+  // Accounting › ...
+  "Accounting › Personal & Professional Coaching":         "1534904461833879552",
+  "Accounting › Accounting & Bookkeeping":                 "531770282601639943",
+  "Accounting › Financial Planning":                       "531770282601639945",
+  "Accounting › Recruiting & Human Resources":             "531770282601639946",
+  "Accounting › Management Consulting & Analysis":         "531770282601639944",
+  "Accounting › Other - Accounting & Consulting":          "531770282601639947",
+  // Admin › ...
+  "Admin › Data Entry & Transcription Services":      "531770282584862724",
+  "Admin › Virtual Assistance":                       "531770282584862725",
+  "Admin › Project Management":                       "531770282584862728",
+  "Admin › Market Research & Product Reviews":        "531770282584862726",
+  // Support › ...
+  "Support › Community Management & Tagging":           "1484275072572772352",
+  "Support › Customer Service & Tech Support":          "531770282584862730",
+  // Legal › ...
+  "Legal › Corporate & Contract Law":                 "531770282605834246",
+  "Legal › International & Immigration Law":          "1484275156546932736",
+  "Legal › Finance & Tax Law":                        "531770283696353280",
+  "Legal › Public Law":                               "1484275408410693632",
+  // Translation › ...
+  "Translation › Language Tutoring & Interpretation":       "1534904461842268160",
+  "Translation › Translation & Localization Services":      "531770282601639939",
+};
 
 function buildJobFilter(filter: JobFilter): string {
   const parts: string[] = [];
   if (filter.skillExpression) parts.push(`skillExpression_eq: ${JSON.stringify(filter.skillExpression)}`);
-  // categoryIds/occupationIds must be numeric — skip text values like category names
-  const numericCatIds = (filter.categoryIds ?? []).filter(id => /^\d+$/.test(id));
-  if (numericCatIds.length) parts.push(`categoryIds_any: [${numericCatIds.join(", ")}]`);
-  const numericOccIds = (filter.occupationIds ?? []).filter(id => /^\d+$/.test(id));
-  if (numericOccIds.length) parts.push(`occupationIds_any: [${numericOccIds.join(", ")}]`);
-  if (filter.jobType) parts.push(`jobType_eq: ${toContractTypeEnum(filter.jobType)}`);
+
+  const catIds = (filter.categoryIds ?? []).map(n => CATEGORY_ID_MAP[n]).filter(Boolean);
+  if (catIds.length) parts.push(`categoryIds_any: [${catIds.join(", ")}]`);
+
+  const subcatIds = (filter.subcategoryIds ?? []).map(n => SUBCATEGORY_ID_MAP[n]).filter(Boolean);
+  if (subcatIds.length) parts.push(`subcategoryIds_any: [${subcatIds.join(", ")}]`);
+
+  if (filter.jobType) parts.push(`jobType_eq: ${filter.jobType.toUpperCase()}`);
   if (filter.verifiedPaymentOnly) parts.push(`verifiedPaymentOnly_eq: true`);
-  if (filter.experienceLevel) parts.push(`experienceLevel_eq: ${toExperienceEnum(filter.experienceLevel)}`);
-  if (filter.minBudget !== undefined || filter.maxBudget !== undefined) {
-    const budgetParts: string[] = [];
-    if (filter.minBudget !== undefined) budgetParts.push(`rangeStart: ${filter.minBudget}`);
-    if (filter.maxBudget !== undefined) budgetParts.push(`rangeEnd: ${filter.maxBudget}`);
-    parts.push(`budgetRange_eq: { ${budgetParts.join(", ")} }`);
+
+  if (filter.experienceLevel) {
+    const lvl = filter.experienceLevel === "Entry" ? "ENTRY_LEVEL" : filter.experienceLevel.toUpperCase();
+    parts.push(`experienceLevel_eq: ${lvl}`);
   }
+
+  if (filter.minBudget !== undefined || filter.maxBudget !== undefined) {
+    const b: string[] = [];
+    if (filter.minBudget !== undefined) b.push(`rangeStart: ${filter.minBudget}`);
+    if (filter.maxBudget !== undefined) b.push(`rangeEnd: ${filter.maxBudget}`);
+    parts.push(`budgetRange_eq: { ${b.join(", ")} }`);
+  }
+
+  if (filter.duration?.length)
+    parts.push(`duration_any: [${filter.duration.map(d => d.toUpperCase()).join(", ")}]`);
+
+  if (filter.workload)
+    parts.push(`workload_eq: ${filter.workload.replace(/ /g, "_").toUpperCase()}`);
+
+  if (filter.daysPosted !== undefined)
+    parts.push(`daysPosted_eq: ${filter.daysPosted}`);
+
+  if (filter.maxProposals !== undefined)
+    parts.push(`proposalRange_eq: { rangeEnd: ${filter.maxProposals} }`);
+
+  if (filter.minClientHires !== undefined)
+    parts.push(`clientHiresRange_eq: { rangeStart: ${filter.minClientHires} }`);
+
+  if (filter.minClientRating !== undefined)
+    parts.push(`clientFeedBackRange_eq: { rangeStart: ${filter.minClientRating} }`);
+
+  if (filter.previousClientsOnly) parts.push(`previousClients_eq: true`);
+  if (filter.enterpriseOnly) parts.push(`enterpriseOnly_eq: true`);
+
   return parts.join("\n    ");
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function mapJobFeedNode(node: any): JobFeedResult | null {
-  if (node.applied === true) return null;
+function mapJobFeedNode(node: any): JobFeedResult {
   const fixedAmount = Number(node.amount?.rawValue ?? 0);
   const hourlyMax = Number(node.hourlyBudgetMax?.rawValue ?? 0);
   const value = fixedAmount > 0 ? fixedAmount : hourlyMax > 0 ? hourlyMax : undefined;
+  const jobType: "Hourly" | "Fixed" | undefined =
+    hourlyMax > 0 ? "Hourly" : fixedAmount > 0 ? "Fixed" : undefined;
   return {
     externalId: `job-${node.id ?? ""}`,
     title: String(node.title ?? "Untitled"),
     description: node.description ?? undefined,
     client: node.client?.location?.country ?? undefined,
     value,
-    currency: node.amount?.currency ?? undefined,
     url: node.id ? `https://www.upwork.com/jobs/${node.id}` : undefined,
     created: node.publishedDateTime ?? undefined,
+    jobType,
+    applied: node.applied === true,
   };
 }
 
@@ -306,7 +422,7 @@ export async function fetchJobFeed(filters: JobFilter[]): Promise<JobFeedResult[
     for (const edge of edges) {
       const raw = edge?.node ?? edge;
       const mapped = mapJobFeedNode(raw);
-      if (!mapped || seen.has(mapped.externalId)) continue;
+      if (seen.has(mapped.externalId)) continue;
       seen.add(mapped.externalId);
       items.push(mapped);
     }

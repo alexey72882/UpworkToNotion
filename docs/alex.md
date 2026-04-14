@@ -1,3 +1,50 @@
+# Session Progress — 2026-04-13/14
+
+## Completed
+
+### Job feed improvements
+- **Added 3 new Notion properties** to the Job Feed DB: `Job Type` (select: Hourly/Fixed), `Applied` (checkbox), `Proposal link` (URL)
+- **Dropped `Currency`** field — always USD, no need to store it
+- **Cross-referenced proposals with job feed**: sync now maps `jobPostingId → proposalId` and writes the proposal URL when you've already applied to a job
+
+### Filter system overhaul
+- **Replaced raw numeric IDs** (`Category IDs`, `Occupation IDs` rich-text fields) with human-readable Notion multi-select dropdowns
+- **Added 10 new filter fields** to Notion Filters DB:
+  - `Category` (multi-select, 12 options)
+  - `Subcategory` (multi-select, 70 options with `Dev ›`, `Design ›`, etc. prefix)
+  - `Duration` (multi-select: Week/Month/Quarter/Semester/Ongoing)
+  - `Workload` (select: Full Time/Part Time/As Needed)
+  - `Days Posted`, `Max Proposals`, `Min Client Hires`, `Min Client Rating` (numbers)
+  - `Previous Clients Only`, `Enterprise Only` (checkboxes)
+- **`CATEGORY_ID_MAP` + `SUBCATEGORY_ID_MAP`** in `upwork.ts` — human labels → Upwork numeric IDs, users never touch raw IDs
+- **Fixed category key mismatch**: Notion doesn't allow commas in multi-select names → `"Web, Mobile & Software Dev"` → `"Web / Mobile & Software Dev"`
+
+### Bug fixes
+- Fixed `Currency` property causing all job upserts to fail (Notion 400 for unknown property)
+- Fixed `Proposal link` property name mismatch (`"Proposal URL"` vs `"Proposal link"`)
+- Debugged `fetchJobFeed` returning 0 jobs — root cause was `workload_eq: PART_TIME` being too restrictive with other active filters, not a code bug
+- Fixed `NOTION_DIARY_DATABASE_ID` missing from `.env.local` after rename from `NOTION_CONTRACTS_DATABASE_ID`
+
+### Deployed
+- All changes live at https://upwork-to-notion.vercel.app
+- 27 tests passing, zero build errors
+
+---
+
+## Next: Phase 2 — Hosted SaaS
+
+See `docs/phase2.md` for the full plan. High-level:
+1. Supabase Auth — user sign-up/login (email + Google)
+2. Multi-tenant schema — `upwork_tokens.user_id`, new `user_settings` table
+3. Upwork OAuth scoped to user — tokens saved per-user, not singleton
+4. Settings page — users paste their own Notion token + DB IDs
+5. Dashboard — connection status, last sync, "Sync Now" button
+6. Sync fan-out — `/api/sync` iterates all configured users
+7. More frequent cron — every 3 hours (requires Vercel Pro)
+8. Landing page — public marketing page
+
+---
+
 # Resume Supabase & Connect Upwork
 
 ## 1. Create a new Supabase project (old one expired)

@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { readJobFilters, upsertJobFeedItem, upsertContractDayItem } from "@/lib/notion";
-import { fetchJobFeed, fetchContractDays, getCurrentWeekRange } from "@/lib/upwork";
+import { fetchUpworkItems, fetchJobFeed, fetchContractDays, getCurrentWeekRange } from "@/lib/upwork";
 import { requireAuth } from "@/lib/requireAuth";
 import { logger } from "@/lib/logger";
 
@@ -37,10 +37,25 @@ export default async function handler(
     logger.info({ filterCount: filters.length }, "loaded job filters");
 
     const { rangeStart, rangeEnd } = getCurrentWeekRange();
-    const [jobItems, contractItems] = await Promise.all([
+    const [proposals, jobItems, contractItems] = await Promise.all([
+      fetchUpworkItems(),
       fetchJobFeed(filters),
       fetchContractDays(rangeStart, rangeEnd),
     ]);
+
+    // Cross-reference: map jobPostingId → proposal URL
+    const proposalByJobId = new Map<string, string>();
+    for (const p of proposals) {
+      if (p.url) {
+        const jobId = p.url.split("/jobs/").pop();
+        if (jobId) proposalByJobId.set(jobId, p.externalId);
+      }
+    }
+    for (const item of jobItems) {
+      const jobId = item.externalId.replace("job-", "");
+      const proposalId = proposalByJobId.get(jobId);
+      if (proposalId) item.proposalUrl = `https://www.upwork.com/ab/proposals/${proposalId}`;
+    }
 
     let jobCreated = 0, jobUpdated = 0, jobSkipped = 0;
     for (const item of jobItems) {

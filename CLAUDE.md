@@ -2,6 +2,67 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
+
+**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
+
+## 1. Think Before Coding
+
+**Don't assume. Don't hide confusion. Surface tradeoffs.**
+
+Before implementing:
+- State your assumptions explicitly. If uncertain, ask.
+- If multiple interpretations exist, present them - don't pick silently.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear, stop. Name what's confusing. Ask.
+
+## 2. Simplicity First
+
+**Minimum code that solves the problem. Nothing speculative.**
+
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No "flexibility" or "configurability" that wasn't requested.
+- No error handling for impossible scenarios.
+- If you write 200 lines and it could be 50, rewrite it.
+
+Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+
+## 3. Surgical Changes
+
+**Touch only what you must. Clean up only your own mess.**
+
+When editing existing code:
+- Don't "improve" adjacent code, comments, or formatting.
+- Don't refactor things that aren't broken.
+- Match existing style, even if you'd do it differently.
+- If you notice unrelated dead code, mention it - don't delete it.
+
+When your changes create orphans:
+- Remove imports/variables/functions that YOUR changes made unused.
+- Don't remove pre-existing dead code unless asked.
+
+The test: Every changed line should trace directly to the user's request.
+
+## 4. Goal-Driven Execution
+
+**Define success criteria. Loop until verified.**
+
+Transform tasks into verifiable goals:
+- "Add validation" → "Write tests for invalid inputs, then make them pass"
+- "Fix the bug" → "Write a test that reproduces it, then make it pass"
+- "Refactor X" → "Ensure tests pass before and after"
+
+For multi-step tasks, state a brief plan:
+```
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+3. [Step] → verify: [check]
+```
+
+Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
+
+
 ## Commands
 
 ```bash
@@ -54,42 +115,56 @@ Get a database ID from its URL: `https://notion.so/workspace/`**`<32-char-hex>`*
 
 Jobs fetched from Upwork marketplace matching your filters. App writes here.
 
-| Property | Type |
-|----------|------|
-| `Name` | Title |
-| `Description` | Rich text |
-| `External ID` | Rich text |
-| `Client` | Rich text (client country) |
-| `Value` | Number |
-| `Currency` | Select |
-| `Created` | Date (published date) |
+| Property | Type | Notes |
+|----------|------|-------|
+| `Name` | Title | Job title |
+| `Description` | Rich text | Truncated to 2000 chars |
+| `External ID` | Rich text | `job-<upwork_id>` — dedup key |
+| `Client` | Rich text | Client's country |
+| `Value` | Number | Max hourly rate or fixed amount (USD) |
+| `Job Type` | Select | `Hourly` or `Fixed` |
+| `Applied` | Checkbox | True if you submitted a proposal |
+| `Proposal link` | URL | Link to your proposal (when Applied = true) |
+| `Upwork Link` | URL | Job posting URL |
+| `Created` | Date | Published date |
 
 #### 2. Job Feed Filters (`NOTION_JOB_FILTERS_DATABASE_ID`)
 
 Each row is a saved search. App reads this to know what to fetch from Upwork.
 
-Property | Type | Notes |
+| Property | Type | Notes |
 |----------|------|-------|
 | `Name` | Title | Label for the filter (e.g. "Figma UI") |
-| `Skill Expression` | Rich text | Free-text skill query (e.g. `UI UX Figma`) |
-| `Category IDs` | Rich text | Comma-separated category IDs |
-| `Occupation IDs` | Rich text | Comma-separated occupation IDs |
-| `Job Type` | Select | `Hourly` or `Fixed` |
-| `Min Budget` | Number | Min fixed price or hourly rate |
-| `Max Budget` | Number | Max fixed price or hourly rate |
-| `Experience Level` | Select | `Entry`, `Intermediate`, or `Expert` |
-| `Verified Payment Only` | Checkbox | Only clients with verified payment |
 | `Active` | Checkbox | Uncheck to pause this filter |
+| `Skill Expression` | Rich text | Free-text skill query (e.g. `UX/UI`) |
+| `Category` | Multi-select | e.g. `Design & Creative`, `Web / Mobile & Software Dev` (12 options) |
+| `Subcategory` | Multi-select | e.g. `Design › Product Design` (70 options with category prefix) |
+| `Job Type` | Select | `Hourly` or `Fixed` |
+| `Min Budget` | Number | Min hourly rate or fixed price (USD) |
+| `Max Budget` | Number | Max hourly rate or fixed price (USD) |
+| `Experience Level` | Multi-select | `Expert`, `Intermediate`, `Entry` — only first value used |
+| `Verified Payment Only` | Checkbox | Only clients with verified payment method |
+| `Duration` | Multi-select | `Week`, `Month`, `Quarter`, `Semester`, `Ongoing` |
+| `Workload` | Select | `Full Time`, `Part Time`, `As Needed` |
+| `Days Posted` | Number | Max days since posting |
+| `Max Proposals` | Number | Upper bound on proposal count |
+| `Min Client Hires` | Number | Minimum prior hires by client |
+| `Min Client Rating` | Number | Minimum client feedback score |
+| `Previous Clients Only` | Checkbox | Only clients you've worked with before |
+| `Enterprise Only` | Checkbox | Enterprise clients only |
 
-#### 3. Active Contracts (`NOTION_CONTRACTS_DATABASE_ID`)
+#### 3. Work Diary (`NOTION_DIARY_DATABASE_ID`)
 
-Your active Upwork contracts with weekly hours. App writes here.
+One row per contract per work day. App writes here.
 
-| Property | Type |
-|----------|------|
-| `Name` | Title |
-| `External ID` | Rich text |
-| `Hours This Week` | Number |
+| Property | Type | Notes |
+|----------|------|-------|
+| `Name` | Title | Week label (e.g. `Week 15`) |
+| `ID` | Rich text | `contract-<id>-<yyyyMMdd>` — dedup key |
+| `Contract name` | Rich text | Contract title from Upwork |
+| `Date` | Date | Work day (ISO format) |
+| `Minutes` | Number | Tracked minutes (cells × 10) |
+| `Rate` | Number | Hourly rate (USD), if applicable |
 
 #### Setting the env vars
 
@@ -97,14 +172,14 @@ Your active Upwork contracts with weekly hours. App writes here.
 ```
 NOTION_JOB_FEED_DATABASE_ID=<id>
 NOTION_JOB_FILTERS_DATABASE_ID=<id>
-NOTION_CONTRACTS_DATABASE_ID=<id>
+NOTION_DIARY_DATABASE_ID=<id>
 ```
 
 **Vercel (production):**
 ```bash
 npx vercel env add NOTION_JOB_FEED_DATABASE_ID production
 npx vercel env add NOTION_JOB_FILTERS_DATABASE_ID production
-npx vercel env add NOTION_CONTRACTS_DATABASE_ID production
+npx vercel env add NOTION_DIARY_DATABASE_ID production
 npx vercel --prod
 ```
 
@@ -120,13 +195,15 @@ npx vercel --prod
 | Variable | Used by |
 |----------|---------|
 | `NOTION_TOKEN` | Notion client auth |
-| `NOTION_DATABASE_ID` | Target Notion database |
+| `NOTION_JOB_FEED_DATABASE_ID` | Job feed output DB |
+| `NOTION_JOB_FILTERS_DATABASE_ID` | Filter config DB (read by app) |
+| `NOTION_DIARY_DATABASE_ID` | Work diary output DB |
 | `SUPABASE_URL` | Supabase client |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase client |
 | `UPWORK_CLIENT_ID` | OAuth flow |
 | `UPWORK_CLIENT_SECRET` | OAuth token exchange & refresh |
 | `UPWORK_REDIRECT_URI` | OAuth callback URL |
-| `UPWORK_PERSON_ID` | Freelancer's numeric Upwork user ID — used by `fetchContracts()` to query work diary |
+| `UPWORK_PERSON_ID` | Freelancer's numeric Upwork user ID — used by `fetchContractDays()` to query work diary |
 | `LOG_LEVEL` | Pino log level (default: `info`) |
 | `API_SECRET` | Auth for protected API routes (`Authorization: Bearer <secret>`) |
 
@@ -141,13 +218,13 @@ After every incremental change, verify:
 curl -s http://localhost:3000/api/ping | jq .
 # expect: {"ok":true,"service":"UpworkToNotion","version":"v0.1"}
 
-# Notion connectivity (requires NOTION_TOKEN + NOTION_DATABASE_ID)
+# Notion connectivity (requires NOTION_TOKEN + NOTION_JOB_FEED_DATABASE_ID)
 curl -s http://localhost:3000/api/notion-debug | jq .
 # expect: {"ok":true,"title":"..."}
 
 # Sync endpoint (requires API_SECRET + Notion + Supabase env vars)
 curl -s -H "Authorization: Bearer $API_SECRET" http://localhost:3000/api/sync | jq .
-# expect: {"ok":true,"created":...,"updated":...,"durationMs":...}
+# expect: {"ok":true,"jobs":{"fetched":...,"created":...,"updated":...,"skipped":...},"contracts":{...},"durationMs":...}
 
 # Upwork fetch (requires API_SECRET + valid OAuth tokens in Supabase)
 curl -s -H "Authorization: Bearer $API_SECRET" \
@@ -199,35 +276,31 @@ Every PR body must include a spec link matching `specs/[0-9]{4}-` — the `spec-
 
 The product spec lives in `specs/specs/0001-upwork-notion-v0.1.md`. The sync pipeline is fully wired up and working end-to-end.
 
-## Current status (as of 2026-04-03)
+## Current status (as of 2026-04-14)
 
 ### What's done
 
 - Full OAuth flow working (auth → callback → tokens saved to Supabase)
 - Upwork GraphQL schema discovered via `/api/upwork/gql-introspect`
-- Sync pipeline: two parallel tracks per cron run:
-  1. **Job feed** (`fetchJobFeed`): reads active filters from Notion filters DB, runs one query per filter, deduplicates by job ID, writes to job feed Notion DB. 10 jobs per filter query (no pagination on this endpoint).
-  2. **Contracts + hours** (`fetchContracts`): 3-step work diary approach (see below) — writes contract name + "Hours This Week" to `NOTION_CONTRACTS_DATABASE_ID`.
+- Sync pipeline: three parallel tracks per cron run:
+  1. **Proposals** (`fetchUpworkItems`): fetches pending/active/hired proposals, used for cross-referencing job feed items with submitted proposals
+  2. **Job feed** (`fetchJobFeed`): reads active filters from Notion filters DB, runs one query per filter, deduplicates by job ID, writes to job feed Notion DB. 10 jobs per filter query (no pagination on this endpoint). Annotates jobs with proposal URL when already applied.
+  3. **Work diary** (`fetchContractDays`): 3-step approach — writes one row per contract per day to `NOTION_DIARY_DATABASE_ID`
 - `contractList` / `vendorContracts` permanently blocked (Upwork partner API scope). Workaround: use `talentWorkHistory` for active contract IDs.
 - **3 Notion databases** wired up (env vars set locally + Vercel):
   - `NOTION_JOB_FEED_DATABASE_ID` — filtered job results (output)
   - `NOTION_JOB_FILTERS_DATABASE_ID` — saved searches (input, read by app)
-  - `NOTION_CONTRACTS_DATABASE_ID` — active contracts + hours this week
+  - `NOTION_DIARY_DATABASE_ID` — per-day work diary rows
 - Notion client pinned to API version `2022-06-28` (SDK default `2025-09-03` removed the `databases/query` endpoint)
-- Job feed filter field mappings:
-  - `jobType_eq`: `HOURLY` / `FIXED`
-  - `budgetRange_eq`: `rangeStart` / `rangeEnd`
-  - `experienceLevel_eq`: `EXPERT` / `INTERMEDIATE` / `ENTRY_LEVEL`
-  - `categoryIds_any`: numeric IDs only — text names silently return 0 results
-  - `Experience Level` in Notion is `multi_select` — only first value used
+- Job feed filters: human-readable multi-select labels in Notion → numeric Upwork IDs via `CATEGORY_ID_MAP` / `SUBCATEGORY_ID_MAP` in `upwork.ts`. 12 filter fields supported (skill, category, subcategory, job type, budget, experience level, verified payment, duration, workload, proposals cap, client hires/rating, flags)
 - Deployed to Vercel, cron runs daily at 9am UTC
 
 ### Contracts sync — 3-step work diary approach
 
-`fetchContracts()` in `src/lib/upwork.ts`:
-1. `talentWorkHistory(filter: { personId: $UPWORK_PERSON_ID, status: [ACTIVE] })` → active contract IDs + titles
-2. Per contract: `workDays(workdaysInput: { contractIds: [...], timeRange: { rangeStart, rangeEnd } })` → days with activity this week (Mon–Sun UTC, yyyyMMdd format)
-3. Per active day: `workDiaryContract(workDiaryContractInput: { contractId, date })` → count `workDiaryTimeCells` (each = 10 min) → convert to hours
+`fetchContractDays()` in `src/lib/upwork.ts`:
+1. `talentWorkHistory(filter: { personId: $UPWORK_PERSON_ID, status: [ACTIVE] })` → active contract IDs + titles + rates
+2. Batched `workDays` queries → days with tracked activity this week (Mon–Sun UTC, yyyyMMdd format)
+3. Batched `workDiaryContract` queries (up to 10 per request) → count `workDiaryTimeCells` (each = 10 min) → stored as `minutes`
 
 **User ID**: `540749103839944704` (Alexey, stored as `UPWORK_PERSON_ID`)
 
@@ -239,13 +312,16 @@ The product spec lives in `specs/specs/0001-upwork-notion-v0.1.md`. The sync pip
 - Upwork OAuth scopes are configured at app level in developer portal, not via `scope` param in auth URL — passing `scope` returns `invalid_scope` error
 - `workDays` / `workDiaryContract` date format: `yyyyMMdd` (not ISO)
 - Weekly earnings blocked — requires Payments scope (`transactionHistory` returns "Authorization failed")
+- Category multi-select names cannot contain commas — `"Web / Mobile & Software Dev"` used instead of `"Web, Mobile & Software Dev"`
+- `Experience Level` is multi-select in Notion but Upwork API only accepts one value — only the first selected option is used
 
-### What's next
+### What's next (Phase 2)
 
-- Add "Hours This Week" Number property to the Notion Contracts DB (app writes it automatically once the property exists)
-- Freelancer profile snapshot (total earnings, JSS, top rated) → sync to Notion
-- Improve Notion job feed layout — views, filters by experience level / budget
-- Consider notifications when new matching jobs appear
+See `docs/phase2.md` for the full plan. Summary:
+- Multi-tenant SaaS: Supabase Auth, per-user tokens + settings, settings/dashboard UI
+- More frequent cron (every 3h) — requires Vercel Pro plan upgrade
+- Freelancer profile snapshot (JSS, total earnings, top-rated) → Notion
+- Notifications when new matching jobs appear
 
 
 ## Coding standards
