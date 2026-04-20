@@ -1,0 +1,33 @@
+import { useEffect } from "react";
+import { useRouter } from "next/router";
+import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
+
+export default function AuthCallback() {
+  const router = useRouter();
+
+  useEffect(() => {
+    const supabase = getSupabaseBrowser();
+
+    // PKCE flow: Supabase sends ?code= in the URL — must exchange it for a session
+    const code = new URLSearchParams(window.location.search).get("code");
+    if (code) {
+      supabase.auth.exchangeCodeForSession(code).then(() => {
+        router.replace("/dashboard");
+      });
+      return;
+    }
+
+    // Fallback: implicit flow (hash fragment) or already-signed-in state
+    supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_IN") {
+        router.replace("/dashboard");
+      }
+    });
+  }, [router]);
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <p className="text-gray-500">Signing you in…</p>
+    </div>
+  );
+}

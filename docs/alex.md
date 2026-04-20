@@ -45,6 +45,232 @@ See `docs/phase2.md` for the full plan. High-level:
 
 ---
 
+# Phase 2 Deployment — Step-by-Step
+
+All code is implemented and the build passes. Complete these steps in order to go live.
+
+---
+
+## Step 1 — Run Supabase schema migration
+
+The multi-tenant schema requires one new column and one new table.
+
+1. Go to https://supabase.com/dashboard → select your project → **SQL Editor** (left sidebar)
+2. Paste and run:
+
+```sql
+-- Add user ownership to existing token table
+ALTER TABLE upwork_tokens ADD COLUMN user_id uuid REFERENCES auth.users(id);
+
+-- Per-user Notion settings
+CREATE TABLE user_settings (
+  user_id          uuid PRIMARY KEY REFERENCES auth.users(id),
+  notion_token     text,
+  job_feed_db_id   text,
+  filters_db_id    text,
+  diary_db_id      text,
+  upwork_person_id text,
+  last_sync_at     timestamptz,
+  last_sync_result jsonb,
+  created_at       timestamptz DEFAULT now(),
+  updated_at       timestamptz DEFAULT now()
+);
+```
+
+3. Click **Run** — you should see "Success. No rows returned."
+
+---
+
+## Step 2 — Get your Supabase anon key
+
+You need two Supabase keys: the **service role key** (already in your env) and the **anon key** (new — used by the browser client).
+
+1. Go to **Project Settings → API** in the Supabase dashboard
+2. Under **Project API keys**, copy the value next to `anon` / `public`
+   - It starts with `eyJ...` (same format as the service role key but a different value)
+   - Do NOT use the `service_role` key for the browser — it bypasses Row Level Security
+
+---
+
+## Step 3 — Add new env vars to `.env.local`
+
+Open `.env.local` in your editor and add two lines:
+
+```
+NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...your-anon-key...
+```
+
+- `NEXT_PUBLIC_SUPABASE_URL` is the same URL as `SUPABASE_URL` already in your file
+- The `NEXT_PUBLIC_` prefix makes these values available to browser-side code (they are safe to expose)
+
+---
+
+## Step 4 — Add new env vars to Vercel
+
+1. Go to https://vercel.com → select the **upworktonotion** project
+2. Go to **Settings → Environment Variables**
+3. Add two new variables (set scope to **Production, Preview, Development** for both):
+
+| Variable | Value |
+|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Same as your `SUPABASE_URL` value |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Anon key from Step 2 |
+
+4. Click **Save** after each
+
+---
+
+## Step 5 — Enable Google OAuth in Supabase (optional)
+
+Skip this step if you only want email/password sign-in.
+
+1. Go to **Authentication → Providers** in the Supabase dashboard
+2. Click **Google**
+3. Toggle **Enable Sign in with Google**
+4. You need a Google OAuth client — create one at https://console.cloud.google.com/apis/credentials:
+   - Create an **OAuth 2.0 Client ID** → type: **Web application**
+   - Authorized redirect URI: `https://your-project-ref.supabase.co/auth/v1/callback`
+   - Copy the **Client ID** and **Client Secret**
+5. Paste them into the Supabase Google provider form → **Save**
+
+---
+
+## Step 6 — Add `API_SECRET` to GitHub Actions secrets
+
+The GitHub Actions workflow calls `/api/sync` with a Bearer token. It needs to know your secret.
+
+1. Go to your GitHub repo → **Settings → Secrets and variables → Actions**
+2. Click **New repository secret**
+3. Name: `API_SECRET`
+4. Value: same value as `API_SECRET` in your `.env.local`
+5. Click **Add secret**
+
+To verify the GitHub Actions workflow file is in place:
+```bash
+cat .github/workflows/sync.yml
+```
+You should see the `*/30 * * * *` cron schedule.
+
+---
+
+## Step 7 — Deploy to Vercel
+
+```bash
+npx vercel --prod
+```
+
+Wait for the deployment to complete. Check the output URL — it should be `https://upwork-to-notion.vercel.app`.
+
+Verify the deployment:
+```bash
+curl -s https://upwork-to-notion.vercel.app/api/ping | jq .
+# expect: {"ok":true,"service":"UpworkToNotion","version":"v0.1"}
+```
+
+---
+
+## Step 8 — Sign up and connect your accounts
+
+1. Open https://upwork-to-notion.vercel.app in your browser
+2. Click **Get started free** → you'll land on the sign-in page
+3. Sign up with your email (or Google if you did Step 5)
+4. Check your email for the confirmation link → click it → you'll be redirected to `/dashboard`
+
+---
+
+## Step 9 — Connect Upwork
+
+1. From the dashboard, click **Edit settings** (or go to `/settings`)
+2. Click **Connect Upwork** — this starts the OAuth flow
+3. Log in to Upwork if prompted, then click **Allow access**
+4. You'll be redirected back to the settings page — Upwork should now show **✓ Connected**
+
+---
+
+## Step 10 — Configure Notion settings
+
+Still on the Settings page, fill in:
+
+| Field | Where to find it |
+|---|---|
+| **Notion Integration Token** | https://www.notion.so/my-integrations → select your integration → copy the **Internal Integration Secret** |
+| **Job Feed Database ID** | Open your Job Feed DB in Notion → copy the 32-char hex from the URL: `notion.so/workspace/`**`<hex>`**`?v=...` |
+| **Filters Database ID** | Same, for your Filters DB |
+| **Work Diary Database ID** | Same, for your Diary DB |
+| **Upwork Person ID** | `540749103839944704` (your existing value) |
+
+Click **Save settings**.
+
+Make sure each Notion DB is shared with your integration:
+- Open the DB in Notion → top-right `...` → **Connections** → find your integration → connect
+
+---
+
+## Step 11 — Migrate your existing Upwork token
+
+Your old token was saved as a "singleton" row without a `user_id`. Link it to your new account.
+
+1. Find your Supabase user ID:
+   - Go to **Authentication → Users** in the Supabase dashboard
+   - Copy the UUID next to your email
+
+2. Run in **SQL Editor**:
+
+```sql
+UPDATE upwork_tokens
+SET user_id = '<paste-your-uuid-here>'
+WHERE id = 'singleton';
+```
+
+3. Click **Run** — you should see "Success. 1 row affected."
+
+---
+
+## Step 12 — Test the full flow
+
+```bash
+# Check the sync endpoint with your session (click "Sync now" in Dashboard)
+# Or test via API_SECRET (what GitHub Actions uses):
+export API_SECRET=<your-secret>
+curl -s -H "Authorization: Bearer $API_SECRET" \
+  https://upwork-to-notion.vercel.app/api/sync | jq .
+# expect: {"ok":true,"jobs":{...},"contracts":{...},"durationMs":...}
+```
+
+From the dashboard, click **Sync now** — you should see "Done — N jobs created" within a few seconds.
+
+---
+
+## Step 13 — Verify GitHub Actions cron
+
+1. Go to your GitHub repo → **Actions** tab
+2. You should see the **Sync** workflow listed
+3. Click it → **Run workflow** (manual trigger) to test immediately
+4. Check the run log — the curl step should return `{"ok":true,...}`
+
+After this, the workflow will run automatically every 30 minutes.
+
+---
+
+## Checklist
+
+- [ ] Step 1: Supabase schema migration run
+- [ ] Step 2: Anon key copied
+- [ ] Step 3: `.env.local` updated with `NEXT_PUBLIC_*` vars
+- [ ] Step 4: Vercel env vars added
+- [ ] Step 5: Google OAuth enabled (optional)
+- [ ] Step 6: `API_SECRET` added to GitHub secrets
+- [ ] Step 7: Deployed to Vercel, ping returns ok
+- [ ] Step 8: Signed up at the live URL
+- [ ] Step 9: Upwork connected via OAuth
+- [ ] Step 10: Notion settings saved, DBs shared with integration
+- [ ] Step 11: Singleton token row linked to your user ID
+- [ ] Step 12: Sync now works from dashboard
+- [ ] Step 13: GitHub Actions cron verified
+
+---
+
 # Resume Supabase & Connect Upwork
 
 ## 1. Create a new Supabase project (old one expired)

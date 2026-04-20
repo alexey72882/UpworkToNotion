@@ -1,0 +1,16 @@
+name: Sync
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'  # every 30 minutes
+  workflow_dispatch:          # allow manual trigger from GitHub UI
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger sync
+        run: |
+          curl -s -f \
+            -H "Authorization: Bearer ${{ secrets.API_SECRET }}" \
+            https://upwork-to-notion.vercel.app/api/sync

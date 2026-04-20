@@ -125,8 +125,8 @@ async function gqlFetch(token: string, query: string) {
   return JSON.parse(text);
 }
 
-export async function fetchUpworkItems(): Promise<UpworkItem[]> {
-  const token = await getValidAccessToken();
+export async function fetchUpworkItems(accessToken?: string): Promise<UpworkItem[]> {
+  const token = accessToken ?? await getValidAccessToken();
   if (!token) throw new Error("No valid Upwork access token");
 
   const items: UpworkItem[] = [];
@@ -369,8 +369,8 @@ function mapJobFeedNode(node: any): JobFeedResult {
   };
 }
 
-export async function fetchJobFeed(filters: JobFilter[]): Promise<JobFeedResult[]> {
-  const token = await getValidAccessToken();
+export async function fetchJobFeed(filters: JobFilter[], accessToken?: string): Promise<JobFeedResult[]> {
+  const token = accessToken ?? await getValidAccessToken();
   if (!token) throw new Error("No valid Upwork access token");
 
   if (filters.length === 0) {
@@ -467,11 +467,11 @@ function getISOWeek(isoDate: string): number {
 
 const DIARY_BATCH_SIZE = 10;
 
-export async function fetchContractDays(fromDate: string, toDate: string): Promise<UpworkContractDay[]> {
-  const token = await getValidAccessToken();
+export async function fetchContractDays(fromDate: string, toDate: string, accessToken?: string, personIdOverride?: string): Promise<UpworkContractDay[]> {
+  const token = accessToken ?? await getValidAccessToken();
   if (!token) throw new Error("No valid Upwork access token");
 
-  const personId = process.env.UPWORK_PERSON_ID;
+  const personId = personIdOverride ?? process.env.UPWORK_PERSON_ID;
   if (!personId) {
     logger.info("UPWORK_PERSON_ID not set, skipping contracts");
     return [];

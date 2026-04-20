@@ -11,6 +11,10 @@ function getNotion(): Client {
   return _notion;
 }
 
+export function getNotionForUser(token: string): Client {
+  return new Client({ auth: token, notionVersion: "2022-06-28" });
+}
+
 function getDbId(envVar: string): string {
   const id = process.env[envVar];
   if (!id) throw new Error(`${envVar} is required`);
@@ -41,9 +45,9 @@ export type JobFilter = {
   enterpriseOnly?: boolean;
 };
 
-export async function readJobFilters(): Promise<JobFilter[]> {
-  const notion = getNotion();
-  const dbId = getDbId("NOTION_JOB_FILTERS_DATABASE_ID");
+export async function readJobFilters(opts?: { notion?: Client; dbId?: string }): Promise<JobFilter[]> {
+  const notion = opts?.notion ?? getNotion();
+  const dbId = opts?.dbId ?? getDbId("NOTION_JOB_FILTERS_DATABASE_ID");
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const resp: any = await notion.request({
@@ -127,8 +131,7 @@ function buildJobFeedProps(item: JobFeedItem): Record<string, any> {
   return props;
 }
 
-async function findPageByExternalId(dbId: string, externalId: string, propName = "External ID"): Promise<string | null> {
-  const notion = getNotion();
+async function findPageByExternalId(notion: Client, dbId: string, externalId: string, propName = "External ID"): Promise<string | null> {
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const resp: any = await notion.request({
@@ -143,12 +146,12 @@ async function findPageByExternalId(dbId: string, externalId: string, propName =
   return null;
 }
 
-export async function upsertJobFeedItem(item: JobFeedItem): Promise<"created" | "updated"> {
-  const notion = getNotion();
-  const dbId = getDbId("NOTION_JOB_FEED_DATABASE_ID");
+export async function upsertJobFeedItem(item: JobFeedItem, opts?: { notion?: Client; dbId?: string }): Promise<"created" | "updated"> {
+  const notion = opts?.notion ?? getNotion();
+  const dbId = opts?.dbId ?? getDbId("NOTION_JOB_FEED_DATABASE_ID");
   const props = buildJobFeedProps(item);
 
-  const existingId = await findPageByExternalId(dbId, item.externalId);
+  const existingId = await findPageByExternalId(notion, dbId, item.externalId);
   if (existingId) {
     await notion.pages.update({ page_id: existingId, properties: props as any });
     return "updated";
@@ -183,12 +186,12 @@ function buildContractDayProps(item: ContractDayItem): Record<string, any> {
   return props;
 }
 
-export async function upsertContractDayItem(item: ContractDayItem): Promise<"created" | "updated"> {
-  const notion = getNotion();
-  const dbId = getDbId("NOTION_DIARY_DATABASE_ID");
+export async function upsertContractDayItem(item: ContractDayItem, opts?: { notion?: Client; dbId?: string }): Promise<"created" | "updated"> {
+  const notion = opts?.notion ?? getNotion();
+  const dbId = opts?.dbId ?? getDbId("NOTION_DIARY_DATABASE_ID");
   const props = buildContractDayProps(item);
 
-  const existingId = await findPageByExternalId(dbId, item.externalId, "ID");
+  const existingId = await findPageByExternalId(notion, dbId, item.externalId, "ID");
   if (existingId) {
     await notion.pages.update({ page_id: existingId, properties: props as any });
     return "updated";

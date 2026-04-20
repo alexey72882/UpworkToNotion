@@ -1,34 +1,26 @@
 # Phase 2: UpworkToNotion → Hosted SaaS
 
-## Context
+## Status: Complete ✓
 
-The current app is a single-tenant personal tool: one Upwork account, one Notion workspace, credentials hardcoded via env vars, cron runs once daily at 9am UTC. Phase 2 converts it to a multi-tenant hosted SaaS where any freelancer can sign up, connect their own Upwork + Notion accounts, and have their jobs/contracts synced automatically — no code required.
-
-Priority quick win: increase sync frequency from daily → every 3 hours.
+Deployed to https://upwork-to-notion.vercel.app on 2026-04-20. End-to-end working: sign up → connect Upwork → configure Notion → sync jobs.
 
 ---
 
-## Architecture decisions
+## What was built
 
-| Concern | Choice | Reason |
-|---|---|---|
-| Auth | **Supabase Auth** | Already have Supabase in stack; supports email + Google OAuth |
-| Per-user tokens | **`upwork_tokens` with `user_id`** | Replace singleton row with per-user rows |
-| User settings | **New `user_settings` Supabase table** | Store Notion token + 3 DB IDs per user |
-| Cron | **Vercel Pro cron `0 */3 * * *`** | Simplest path; requires plan upgrade |
-| Frontend | **Next.js pages** (already in stack) | Add `/`, `/dashboard`, `/settings` |
+### Auth
+- Supabase Auth with email sign-up (Google OAuth optional, requires Google Cloud Console setup)
+- `src/pages/auth/signin.tsx` — Auth UI with email + Google
+- `src/pages/auth/callback.tsx` — PKCE code exchange (`supabase.auth.exchangeCodeForSession`)
+- `src/proxy.ts` — redirects unauthenticated users from `/dashboard`, `/settings` to `/auth/signin`
+  - **Note:** Next.js 16 deprecated `middleware.ts` in favour of `proxy.ts` with a `proxy` export
 
----
-
-## Implementation
-
-### 1. Supabase schema (run in Supabase dashboard)
-
+### Supabase schema
 ```sql
--- Add user_id to existing upwork_tokens table
 ALTER TABLE upwork_tokens ADD COLUMN user_id uuid REFERENCES auth.users(id);
+ALTER TABLE upwork_tokens ADD CONSTRAINT upwork_tokens_user_id_key UNIQUE (user_id);
+ALTER TABLE upwork_tokens ALTER COLUMN id SET DEFAULT gen_random_uuid()::text;
 
--- Per-user Notion settings
 CREATE TABLE user_settings (
   user_id          uuid PRIMARY KEY REFERENCES auth.users(id),
   notion_token     text,
@@ -36,6 +28,8 @@ CREATE TABLE user_settings (
   filters_db_id    text,
   diary_db_id      text,
   upwork_person_id text,
+  upwork_client_id     text,
+  upwork_client_secret text,
   last_sync_at     timestamptz,
   last_sync_result jsonb,
   created_at       timestamptz DEFAULT now(),
@@ -43,125 +37,75 @@ CREATE TABLE user_settings (
 );
 ```
 
-### 2. Auth pages
+### Upwork OAuth — per user, not shared app
+**Key decision change from original plan:** each user registers their own Upwork API app and provides their Client Key + Secret. The app does not use a shared operator Upwork app.
 
-New files:
-- `src/pages/auth/signin.tsx` — Supabase Auth UI (`@supabase/auth-ui-react`) with email + Google
-- `src/pages/auth/callback.tsx` — handles Supabase Auth redirect after OAuth
-- `src/middleware.ts` — redirect unauthenticated users from `/dashboard`, `/settings` to `/signin`
-- `src/lib/supabaseBrowser.ts` — `createBrowserClient()` for client-side session (separate from existing service-role client)
-- `src/lib/supabaseServer.ts` — `createServerClient()` for API route session reading
+- Settings page shows the callback URL (`https://upwork-to-notion.vercel.app/api/upwork/callback`) with a copy button
+- User registers app at upwork.com/developer/keys, pastes Key + Secret, saves, then clicks Connect
+- OAuth state encoded as `${userId}:${nonce}` to bind callback to the right user
+- After OAuth, person ID auto-fetched via GraphQL `{ user { id } }` and saved to `user_settings` — **no manual input required**
 
-New dependencies:
-```bash
-npm install @supabase/ssr @supabase/auth-ui-react @supabase/auth-ui-shared
-```
+### Settings page
+- Upwork section: Client Key, Client Secret, callback URL copy button, Connect button (disabled until Key + Secret saved)
+- Notion section: Integration Token, Job Feed DB ID, Filters DB ID, Diary DB ID
+- **Upwork Person ID removed from UI** — fetched automatically post-OAuth
 
-### 3. Upwork OAuth — bind to user
+### Sync fan-out
+- GitHub Actions cron `*/30 * * * *` (every 30 min) calls `/api/sync` with `Authorization: Bearer API_SECRET`
+- Dashboard "Sync Now" calls `/api/sync` authenticated via Supabase session
+- `/api/sync` dual-path: Bearer token → sync all users; session → sync current user only
+- Per-user: uses their Notion token, DB IDs, Upwork token, and person ID
+- `fetchUpworkItems()` updated to accept optional `accessToken` param (was using singleton token, causing silent failures)
 
-**`src/pages/api/upwork/auth.ts`** — read user session, encode `userId` in OAuth state (`${userId}:${nonce}`).
-
-**`src/pages/api/upwork/callback.ts`** — decode `userId` from state, save tokens to `upwork_tokens` with `user_id` column instead of singleton `id = "singleton"`.
-
-**`src/lib/upworkToken.ts`** — `getValidAccessToken(userId: string)` — query by `user_id` instead of `id = "singleton"`.
-
-### 4. Notion settings as user input (not env vars)
-
-**`src/lib/notion.ts`** — add `getNotionForUser(token: string): Client` alongside existing `getNotion()`. Update `readJobFilters`, `upsertJobFeedItem`, `upsertContractDayItem` to accept a `Client` parameter instead of reading env vars.
-
-**`src/pages/api/user/settings.ts`** (new) — `GET` returns current settings, `PATCH` upserts to `user_settings`. Auth-gated via Supabase session.
-
-### 5. Sync fan-out across users
-
-**`src/pages/api/sync.ts`** — change from single-tenant to multi-tenant:
-1. Query all users who have both `upwork_tokens` and `user_settings.notion_token` configured
-2. For each user: run the existing job feed + contract pipeline with their tokens/DB IDs
-3. Write `last_sync_at` + result counts back to `user_settings`
-
-The existing `fetchJobFeed`, `fetchContractDays`, `upsertJobFeedItem` etc. are already parameterized on token — pass user-specific values.
-
-### 6. Settings page
-
-**`src/pages/settings.tsx`** — form with:
-- Notion Token (paste from Notion integrations page)
-- Job Feed Database ID
-- Filters Database ID
-- Diary Database ID
-- Upwork Person ID (numeric, from Upwork profile URL)
-- "Save" → `PATCH /api/user/settings`
-- "Connect Upwork" button → `/api/upwork/auth`
-
-### 7. Dashboard page
-
-**`src/pages/dashboard.tsx`** — shows:
-- Upwork connection status (✓/✗) + "Reconnect" button
-- Notion connection status (checks if token + DB IDs are saved)
-- Last sync time + result counts (from `user_settings.last_sync_result`)
-- "Sync Now" button → `GET /api/sync`
-
-### 8. Landing page
-
-**`src/pages/index.tsx`** — marketing page:
-- Headline + value prop
-- Feature list (job feed, contracts, filters)
-- "Get started free" → `/auth/signin`
-
-### 9. More frequent cron
-
-**`vercel.json`**:
-```json
-{
-  "crons": [
-    { "path": "/api/sync", "schedule": "0 */3 * * *" }
-  ]
-}
-```
-
-⚠️ Requires **Vercel Pro plan** upgrade before deploying (Hobby plan is limited to daily crons).
+### Cron
+- **Vercel cron removed** — replaced with GitHub Actions (free, no Pro plan needed)
+- `.github/workflows/sync.yml` — 30-min schedule, manual trigger via `workflow_dispatch`
+- Requires `API_SECRET` added to GitHub repo secrets (Settings → Secrets → Actions)
 
 ---
 
-## Files to modify
+## What changed vs original plan
 
-| File | Change |
-|------|--------|
-| `src/lib/upworkToken.ts` | Add `userId` param to `getValidAccessToken` |
-| `src/lib/notion.ts` | Add `getNotionForUser(token)`, thread token through all functions |
-| `src/lib/upwork.ts` | Pass token explicitly (already partially done) |
-| `src/pages/api/upwork/auth.ts` | Encode `userId` in state |
-| `src/pages/api/upwork/callback.ts` | Decode `userId`, save per-user row |
-| `src/pages/api/sync.ts` | Fan-out across all users |
-| `vercel.json` | Cron schedule `0 */3 * * *` |
-
-## Files to create
-
-- `src/middleware.ts`
-- `src/lib/supabaseBrowser.ts`
-- `src/lib/supabaseServer.ts`
-- `src/pages/auth/signin.tsx`
-- `src/pages/auth/callback.tsx`
-- `src/pages/dashboard.tsx`
-- `src/pages/settings.tsx`
-- `src/pages/index.tsx`
-- `src/pages/api/user/settings.ts`
+| Original plan | What actually happened |
+|---|---|
+| Shared Upwork OAuth app (operator provides Key/Secret as env vars) | Each user brings their own Upwork API app |
+| Upwork Person ID entered manually in settings | Auto-fetched from Upwork GraphQL after OAuth |
+| Vercel Pro cron every 3h | GitHub Actions free cron every 30 min |
+| `src/middleware.ts` | `src/proxy.ts` (Next.js 16 convention) |
+| Filters DB ID not in settings | Added to settings form |
 
 ---
 
-## Phase 3 — Post-MVP
+## Bugs fixed during implementation
 
-- Auto-create Notion databases on onboarding (Notion API can create DBs)
-- Email notifications when new matching jobs appear (Resend)
-- Sync history log per user
-- Billing / usage limits (Stripe)
-- Multi experience level: run separate queries per level selected
-- Freelancer profile snapshot: sync JSS, total earnings, top-rated status to Notion
+- `upwork_tokens.user_id` missing unique constraint → added `UNIQUE` constraint
+- `upwork_tokens.id` NOT NULL with no default for new rows → added `DEFAULT gen_random_uuid()`
+- `fetchUpworkItems()` used singleton token → updated to accept `accessToken` param
+- `auth/callback.tsx` didn't handle PKCE `?code=` param → added `exchangeCodeForSession`
+- Supabase Site URL pointed to localhost → must be set to production URL in Auth → URL Configuration
+- Next.js prerendered `/auth/signin` at build time → `getSupabaseBrowser()` moved inside lazy `useState`
 
 ---
 
-## Verification
+## New env vars required
 
-1. `npm run test` — all 27 tests pass
-2. `npm run build` — zero type errors
-3. New user flow: sign up → connect Upwork (OAuth) → paste Notion token + DB IDs → "Sync Now" → jobs appear in their Notion DB
-4. Multi-user isolation: two accounts with different filters sync independently
-5. Cron: verify 3-hour runs in Vercel production logs after Pro plan upgrade
+| Variable | Where |
+|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL (same as `SUPABASE_URL`) |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key (NOT service role) |
+
+Both needed in `.env.local` and Vercel environment variables.
+
+---
+
+## Next steps (Phase 3)
+
+- **GitHub Actions secret** — confirm `API_SECRET` added to repo secrets so cron fires automatically
+- **Google OAuth** — optional; requires Google Cloud Console OAuth client + Supabase Auth provider config
+- **Auto-create Notion databases** — remove need for users to manually create 3 DBs and share with integration
+- **Onboarding flow** — guide new users step by step (currently requires reading docs)
+- **Email notifications** — alert when new matching jobs appear (Resend)
+- **Freelancer profile snapshot** — sync JSS, earnings, top-rated status to Notion
+- **Sync history log** — per-user log of each sync run
+- **Billing / usage limits** — Stripe when scaling beyond ~10 users
+- **Custom domain** — buy via Hostinger (~$10-15/yr), point to Vercel via CNAME

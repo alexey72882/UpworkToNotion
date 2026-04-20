@@ -2,6 +2,7 @@ import { Agent, setGlobalDispatcher } from "undici";
 import dns from "node:dns";
 import type { NextApiRequest, NextApiResponse } from "next";
 import { saveTokens } from "@/lib/upworkToken";
+import { getSupabase } from "@/lib/supabase";
 import { logger } from "@/lib/logger";
 
 dns.setDefaultResultOrder("ipv4first");
@@ -127,12 +128,21 @@ export default async function handler(
       "oauth_state=; HttpOnly; Path=/; Max-Age=0",
     );
 
-    const client_id = process.env.UPWORK_CLIENT_ID;
-    const client_secret = process.env.UPWORK_CLIENT_SECRET;
-    const redirect_uri = process.env.UPWORK_REDIRECT_URI;
+    // Extract userId from state (format: "userId:nonce")
+    const userId = cookieState.split(":")[0];
 
-    if (!client_id || !client_secret || !redirect_uri) {
-      return res.status(500).json({ ok: false, error: "Missing UPWORK_* envs" });
+    const { data: settings } = await getSupabase()
+      .from("user_settings")
+      .select("upwork_client_id, upwork_client_secret")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    const client_id = settings?.upwork_client_id;
+    const client_secret = settings?.upwork_client_secret;
+    const redirect_uri = "https://upwork-to-notion.vercel.app/api/upwork/callback";
+
+    if (!client_id || !client_secret) {
+      return res.status(400).json({ ok: false, error: "Upwork credentials not found. Save your Key and Secret in settings first." });
     }
 
     const authB64 = Buffer.from(`${client_id}:${client_secret}`).toString("base64");
@@ -171,12 +181,41 @@ export default async function handler(
     };
 
     try {
-      await saveTokens({
-        access_token: data.access_token,
-        refresh_token: data.refresh_token,
-        expires_in: data.expires_in,
-        scope: data.scope,
-      });
+      await saveTokens(
+        {
+          access_token: data.access_token,
+          refresh_token: data.refresh_token,
+          expires_in: data.expires_in,
+          scope: data.scope,
+        },
+        userId || undefined,
+      );
+
+      // Auto-fetch the user's Upwork person ID and save it to user_settings
+      try {
+        const meRes = await fetch("https://api.upwork.com/graphql", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${data.access_token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ query: "{ user { id } }" }),
+        });
+        const me = await meRes.json();
+        const personId = String(me?.data?.user?.id ?? "");
+        if (personId && userId) {
+          const db = getSupabase();
+          const { data: existing } = await db.from("user_settings").select("user_id").eq("user_id", userId).maybeSingle();
+          if (existing) {
+            await db.from("user_settings").update({ upwork_person_id: personId, updated_at: new Date().toISOString() }).eq("user_id", userId);
+          } else {
+            await db.from("user_settings").insert({ user_id: userId, upwork_person_id: personId, updated_at: new Date().toISOString() });
+          }
+        }
+      } catch (meError) {
+        logger.warn({ err: meError }, "Could not fetch Upwork person ID");
+      }
+
       return res.status(200).json({ ok: true, saved: true, endpoint: result.endpoint });
     } catch (saveError) {
       const supabaseMessage =
