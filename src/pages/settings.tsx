@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
+import Link from "next/link";
 import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
 
 const CALLBACK_URL = "https://upwork-to-notion.vercel.app/api/upwork/callback";
@@ -71,7 +72,7 @@ export default function SettingsPage() {
       <div className="max-w-lg mx-auto">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold">Settings</h1>
-          <a href="/dashboard" className="text-sm text-gray-500 hover:underline">← Dashboard</a>
+          <Link href="/dashboard" className="text-sm text-gray-500 hover:underline">← Dashboard</Link>
         </div>
 
         {/* Upwork */}
@@ -125,6 +126,7 @@ export default function SettingsPage() {
             {upworkConnected
               ? <p className="text-green-600 text-sm mb-2">✓ Upwork connected</p>
               : <p className="text-gray-500 text-sm mb-2">Not connected yet</p>}
+            {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
             <a
               href="/api/upwork/auth"
               className={`inline-block px-4 py-2 rounded-lg text-sm text-white ${upworkReady ? "bg-green-600 hover:bg-green-700" : "bg-gray-300 pointer-events-none"}`}

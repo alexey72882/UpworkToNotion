@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
+import Link from "next/link";
 import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
 
 type SyncResult = { fetched: number; created: number; updated: number; skipped: number };
@@ -88,9 +89,9 @@ export default function Dashboard() {
               </span>
             </div>
           </div>
-          <a href="/settings" className="mt-4 inline-block text-sm text-blue-600 hover:underline">
+          <Link href="/settings" className="mt-4 inline-block text-sm text-blue-600 hover:underline">
             Edit settings →
-          </a>
+          </Link>
         </div>
 
         {/* Sync */}
