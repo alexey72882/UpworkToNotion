@@ -12,15 +12,17 @@ export default function SignIn() {
   if (!supabase) return null;
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="w-full max-w-md bg-white rounded-xl shadow p-8">
-        <h1 className="text-2xl font-bold text-center mb-6">UpworkToNotion</h1>
-        <Auth
-          supabaseClient={supabase}
-          appearance={{ theme: ThemeSupa }}
-          providers={["google"]}
-          redirectTo={`${window.location.origin}/auth/callback`}
-        />
+    <div className="min-h-screen bg-base-200 flex items-center justify-center">
+      <div className="card w-full max-w-md bg-base-100 shadow-xl">
+        <div className="card-body">
+          <h1 className="card-title justify-center text-2xl mb-2">UpworkToNotion</h1>
+          <Auth
+            supabaseClient={supabase}
+            appearance={{ theme: ThemeSupa }}
+            providers={["google"]}
+            redirectTo={`${window.location.origin}/auth/callback`}
+          />
+        </div>
       </div>
     </div>
   );

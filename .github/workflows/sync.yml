@@ -2,7 +2,7 @@ name: Sync
 
 on:
   schedule:
-    - cron: '*/30 * * * *'  # every 30 minutes
+    - cron: '*/10 * * * *'  # every 10 minutes
   workflow_dispatch:          # allow manual trigger from GitHub UI
 
 jobs:
@@ -11,6 +11,23 @@ jobs:
     steps:
       - name: Trigger sync
         run: |
-          curl -s -f \
+          response=$(curl -s -f \
             -H "Authorization: Bearer ${{ secrets.API_SECRET }}" \
-            https://upwork-to-notion.vercel.app/api/sync
+            https://upwork-to-notion.vercel.app/api/sync)
+          echo "$response"
+
+          # Fail if any user sync failed (ok:true but users>0 and everything is 0)
+          users=$(echo "$response" | jq '.users')
+          jobs_fetched=$(echo "$response" | jq '.jobs.fetched')
+          contracts_fetched=$(echo "$response" | jq '.contracts.fetched')
+          ok=$(echo "$response" | jq '.ok')
+
+          if [ "$ok" != "true" ]; then
+            echo "ERROR: sync returned ok:false"
+            exit 1
+          fi
+
+          if [ "$users" -gt 0 ] && [ "$jobs_fetched" -eq 0 ] && [ "$contracts_fetched" -eq 0 ]; then
+            echo "ERROR: sync ran for $users user(s) but fetched 0 jobs and 0 contracts — likely a token or config issue"
+            exit 1
+          fi

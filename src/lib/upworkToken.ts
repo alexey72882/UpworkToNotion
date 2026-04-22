@@ -96,6 +96,8 @@ async function refreshWithUpwork(refresh_token: string, credentials: { client_id
     body: new URLSearchParams({
       grant_type: "refresh_token",
       refresh_token,
+      client_id: credentials.client_id,
+      client_secret: credentials.client_secret,
     }),
   });
 

@@ -68,111 +68,101 @@ export default function SettingsPage() {
   const upworkReady = !!(form.upwork_client_id && form.upwork_client_secret);
 
   return (
-    <div className="min-h-screen bg-gray-50 py-10 px-4">
+    <div className="min-h-screen bg-base-200 py-10 px-4">
       <div className="max-w-lg mx-auto">
+
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold">Settings</h1>
-          <Link href="/dashboard" className="text-sm text-gray-500 hover:underline">← Dashboard</Link>
+          <Link href="/dashboard" className="btn btn-ghost btn-sm">← Dashboard</Link>
         </div>
 
         {/* Upwork */}
-        <form onSubmit={save} className="bg-white rounded-xl shadow p-6 mb-6 space-y-4">
-          <h2 className="font-semibold">Upwork API</h2>
+        <form onSubmit={save} className="card bg-base-100 shadow mb-6">
+          <div className="card-body space-y-4">
+            <h2 className="card-title text-base">Upwork API</h2>
 
-          <div className="text-xs text-gray-500 space-y-1">
-            <p>
-              1. Register a Web project at{" "}
-              <a href="https://www.upwork.com/developer/keys/new" target="_blank" rel="noreferrer" className="underline">
-                upwork.com/developer/keys/new
-              </a>
-            </p>
-            <p>2. Set the Callback URL to:</p>
-            <div className="flex items-center gap-2 mt-1">
-              <code className="flex-1 bg-gray-100 px-3 py-1.5 rounded break-all">{CALLBACK_URL}</code>
-              <button type="button" onClick={copyCallback} className="shrink-0 text-blue-600 hover:underline">
-                {copied ? "Copied!" : "Copy"}
-              </button>
+            <div className="text-xs text-base-content/50 space-y-1">
+              <p>
+                1. Register a Web project at{" "}
+                <a href="https://www.upwork.com/developer/keys/new" target="_blank" rel="noreferrer" className="link">
+                  upwork.com/developer/keys/new
+                </a>
+              </p>
+              <p>2. Set the Callback URL to:</p>
+              <div className="flex items-center gap-2 mt-1">
+                <code className="flex-1 bg-base-200 px-3 py-1.5 rounded text-xs break-all">{CALLBACK_URL}</code>
+                <button type="button" onClick={copyCallback} className="btn btn-ghost btn-xs shrink-0">
+                  {copied ? "Copied!" : "Copy"}
+                </button>
+              </div>
+              <p>3. Paste the Key and Secret below, save, then click Connect.</p>
             </div>
-            <p>3. Paste the Key and Secret below, save, then click Connect.</p>
-          </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Client Key</label>
-            <input
-              type="text"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              {...field("upwork_client_id")}
-            />
-          </div>
+            <label className="form-control w-full">
+              <div className="label"><span className="label-text">Client Key</span></div>
+              <input type="text" className="input input-bordered w-full" {...field("upwork_client_id")} />
+            </label>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Client Secret</label>
-            <input
-              type="password"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              {...field("upwork_client_secret")}
-            />
-          </div>
+            <label className="form-control w-full">
+              <div className="label"><span className="label-text">Client Secret</span></div>
+              <input type="password" className="input input-bordered w-full" {...field("upwork_client_secret")} />
+            </label>
 
-          <button
-            type="submit"
-            disabled={saving}
-            className="w-full py-2 px-4 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
-          >
-            {saving ? "Saving…" : saved ? "Saved ✓" : "Save"}
-          </button>
+            <button type="submit" disabled={saving} className="btn btn-soft btn-primary w-full">
+              {saving && <span className="loading loading-spinner loading-xs" />}
+              {saving ? "Saving…" : saved ? "Saved ✓" : "Save"}
+            </button>
 
-          <div className="pt-1 border-t border-gray-100">
-            {upworkConnected
-              ? <p className="text-green-600 text-sm mb-2">✓ Upwork connected</p>
-              : <p className="text-gray-500 text-sm mb-2">Not connected yet</p>}
-            {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
-            <a
-              href="/api/upwork/auth"
-              className={`inline-block px-4 py-2 rounded-lg text-sm text-white ${upworkReady ? "bg-green-600 hover:bg-green-700" : "bg-gray-300 pointer-events-none"}`}
-            >
-              {upworkConnected ? "Reconnect Upwork" : "Connect Upwork"}
-            </a>
-            {!upworkReady && (
-              <p className="text-xs text-gray-400 mt-1">Save your Key and Secret first.</p>
-            )}
+            <div className="divider my-0" />
+
+            <div>
+              {upworkConnected
+                ? <div className="badge badge-success mb-2">✓ Upwork connected</div>
+                : <p className="text-sm text-base-content/50 mb-2">Not connected yet</p>}
+              {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+              <a
+                href="/api/upwork/auth"
+                className={`btn btn-sm ${upworkReady ? "btn-success" : "btn-disabled"}`}
+              >
+                {upworkConnected ? "Reconnect Upwork" : "Connect Upwork"}
+              </a>
+              {!upworkReady && (
+                <p className="text-xs text-base-content/40 mt-1">Save your Key and Secret first.</p>
+              )}
+            </div>
           </div>
         </form>
 
         {/* Notion */}
-        <form onSubmit={save} className="bg-white rounded-xl shadow p-6 space-y-4">
-          <h2 className="font-semibold">Notion</h2>
-          <p className="text-xs text-gray-500">
-            Get your integration token at{" "}
-            <a href="https://www.notion.so/my-integrations" target="_blank" rel="noreferrer" className="underline">
-              notion.so/my-integrations
-            </a>. Database IDs are the 32-char hex in the DB URL.
-          </p>
+        <form onSubmit={save} className="card bg-base-100 shadow">
+          <div className="card-body space-y-4">
+            <h2 className="card-title text-base">Notion</h2>
+            <p className="text-xs text-base-content/50">
+              Get your integration token at{" "}
+              <a href="https://www.notion.so/my-integrations" target="_blank" rel="noreferrer" className="link">
+                notion.so/my-integrations
+              </a>. Database IDs are the 32-char hex in the DB URL.
+            </p>
 
-          {([
-            ["notion_token", "Notion Integration Token", "password"],
-            ["job_feed_db_id", "Job Feed Database ID", "text"],
-            ["filters_db_id", "Filters Database ID", "text"],
-            ["diary_db_id", "Work Diary Database ID", "text"],
-          ] as [keyof Settings, string, string][]).map(([key, label, type]) => (
-            <div key={key}>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
-              <input
-                type={type}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                {...field(key)}
-              />
-            </div>
-          ))}
+            {([
+              ["notion_token", "Notion Integration Token", "password"],
+              ["job_feed_db_id", "Job Feed Database ID", "text"],
+              ["filters_db_id", "Filters Database ID", "text"],
+              ["diary_db_id", "Work Diary Database ID", "text"],
+            ] as [keyof Settings, string, string][]).map(([key, label, type]) => (
+              <label key={key} className="form-control w-full">
+                <div className="label"><span className="label-text">{label}</span></div>
+                <input type={type} className="input input-bordered w-full" {...field(key)} />
+              </label>
+            ))}
 
-          <button
-            type="submit"
-            disabled={saving}
-            className="w-full py-2 px-4 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
-          >
-            {saving ? "Saving…" : saved ? "Saved ✓" : "Save settings"}
-          </button>
+            <button type="submit" disabled={saving} className="btn btn-soft btn-primary w-full">
+              {saving && <span className="loading loading-spinner loading-xs" />}
+              {saving ? "Saving…" : saved ? "Saved ✓" : "Save settings"}
+            </button>
+          </div>
         </form>
+
       </div>
     </div>
   );
