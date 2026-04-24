@@ -1,11 +1,9 @@
 import { useState } from "react";
-import { useRouter } from "next/router";
 import Link from "next/link";
 import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
 import Logo from "@/components/Logo";
 
 export default function SignUp() {
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);

@@ -17,7 +17,7 @@ export default function ResetPassword() {
     const type = params.get("type");
 
     if (!token_hash || type !== "recovery") {
-      setError("Invalid or missing reset link. Please request a new one.");
+      setTimeout(() => setError("Invalid or missing reset link. Please request a new one."), 0);
       return;
     }
 
