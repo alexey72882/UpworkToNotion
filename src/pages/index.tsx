@@ -9,7 +9,7 @@ const features = [
 
 export default function Landing() {
   return (
-    <div className="min-h-screen bg-base-100">
+    <div className="min-h-screen bg-base-300">
       <div className="max-w-2xl mx-auto px-6 py-20">
         <div className="mb-8"><Logo size={40} /></div>
         <h1 className="text-4xl font-bold tracking-tight mb-4">

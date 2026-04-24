@@ -31,7 +31,7 @@ export default function SignUp() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-base-200">
+    <div className="min-h-screen flex items-center justify-center bg-base-300">
       <div className="w-full max-w-lg bg-base-100 rounded-2xl shadow p-6 flex flex-col gap-6">
 
         <Logo size={60} />
@@ -41,7 +41,7 @@ export default function SignUp() {
         </h1>
 
         {confirm ? (
-          <div role="alert" className="alert alert-success alert-soft">
+          <div role="alert" className="alert alert-success alert-outline bg-[color-mix(in_oklch,var(--color-success)_10%,var(--color-base-100))]">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 shrink-0 stroke-current" fill="none" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
@@ -80,7 +80,7 @@ export default function SignUp() {
             </label>
 
             {error && (
-              <div role="alert" className="alert alert-error alert-soft">
+              <div role="alert" className="alert alert-error alert-outline bg-base-100">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 shrink-0 stroke-current" fill="none" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>

@@ -47,6 +47,15 @@ const NAV = [
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { pathname, replace } = useRouter();
   const [initials, setInitials] = useState("");
+  const [sidebarOpen, setSidebarOpen] = useState(() =>
+    typeof window !== "undefined" ? localStorage.getItem("sidebar") !== "closed" : true
+  );
+
+  function toggleSidebar() {
+    const next = !sidebarOpen;
+    setSidebarOpen(next);
+    localStorage.setItem("sidebar", next ? "open" : "closed");
+  }
 
   useEffect(() => {
     getSupabaseBrowser().auth.getUser().then(({ data: { user } }) => {
@@ -61,8 +70,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="drawer lg:drawer-open min-h-screen bg-base-200">
-      <input id="app-drawer" type="checkbox" className="drawer-toggle" />
+    <div className="drawer lg:drawer-open min-h-screen bg-base-300">
+      <input id="app-drawer" type="checkbox" className="drawer-toggle" checked={sidebarOpen} onChange={toggleSidebar} />
 
       {/* Main content */}
       <div className="drawer-content flex flex-col min-h-screen">

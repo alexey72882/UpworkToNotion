@@ -27,7 +27,7 @@ export default function AuthCallback() {
   }, [router]);
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-base-200">
+    <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-base-300">
       <Logo size={40} />
       <p className="text-sm text-base-content/50">Signing you in…</p>
     </div>

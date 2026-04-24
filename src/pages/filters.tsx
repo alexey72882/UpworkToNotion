@@ -97,8 +97,12 @@ function hasChanges(f: WebFilter) {
 export default function FiltersPage() {
   const router = useRouter();
   const [form, setForm] = useState<WebFilter>(EMPTY);
+  const [committedForm, setCommittedForm] = useState<WebFilter>(EMPTY);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: "success" | "info" } | null>(null);
+  const [toastVisible, setToastVisible] = useState(false);
+  const [loading, setLoading] = useState(true);
   const categoryDropdownRef = useRef<HTMLDetailsElement>(null);
 
   useEffect(() => {
@@ -106,9 +110,13 @@ export default function FiltersPage() {
       if (!user) router.replace("/auth/signin");
     });
     fetch("/api/user/settings").then(r => r.json()).then(d => {
+      console.log("[filters] GET settings:", d);
       if (d.ok && d.settings?.web_filter) {
         setForm(d.settings.web_filter);
+        setCommittedForm(d.settings.web_filter);
+        setSaved(true);
       }
+      setLoading(false);
     });
   }, [router]);
 
@@ -148,15 +156,32 @@ export default function FiltersPage() {
     setSaved(false);
   }
 
+  function showToast(message: string, type: "success" | "info") {
+    setToast({ message, type });
+    setToastVisible(true);
+    setTimeout(() => setToastVisible(false), 3000);
+    setTimeout(() => setToast(null), 3300);
+  }
+
   async function applyFilters() {
+    if (!hasChanges(form)) {
+      showToast("Please select at least one filter.", "info");
+      return;
+    }
     setSaving(true);
-    await fetch("/api/user/settings", {
+    const r = await fetch("/api/user/settings", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ web_filter: form }),
     });
+    const d = await r.json();
+    console.log("[filters] PATCH settings:", d);
     setSaving(false);
-    setSaved(true);
+    if (d.ok) {
+      setSaved(true);
+      setCommittedForm(form);
+      showToast("Filters successfully applied!", "success");
+    }
   }
 
   const subcats = form.category ? (SUBCATEGORIES[form.category] ?? []) : [];
@@ -183,37 +208,66 @@ export default function FiltersPage() {
       onRemove: () => { setForm(f => ({ ...f, verifiedPaymentOnly: false })); setSaved(false); },
     }] : []),
   ];
-  const dirty = hasChanges(form);
+  const dirty = JSON.stringify(form) !== JSON.stringify(committedForm);
   const half = Math.ceil(subcats.length / 2);
+
+  if (loading) return (
+    <AppLayout>
+      <div className="flex flex-col gap-6">
+        <div className="skeleton h-8 w-48" />
+        <div className="card bg-base-100 shadow-sm">
+          <div className="card-body gap-6">
+            <div className="skeleton h-6 w-24" />
+            <div className="divider my-0" />
+            <div className="flex items-center gap-4">
+              <div className="skeleton h-4 w-36" />
+              <div className="skeleton h-10 w-72" />
+            </div>
+            <div className="divider my-0" />
+            <div className="flex items-center gap-4">
+              <div className="skeleton h-4 w-36" />
+              <div className="skeleton h-4 w-20 ml-76" />
+              <div className="skeleton h-4 w-24" />
+            </div>
+            <div className="divider my-0" />
+            <div className="flex items-center gap-4">
+              <div className="skeleton h-4 w-36" />
+              <div className="skeleton h-4 w-16 ml-76" />
+              <div className="skeleton h-4 w-24" />
+              <div className="skeleton h-4 w-16" />
+            </div>
+            <div className="divider my-0" />
+            <div className="flex items-center gap-4">
+              <div className="skeleton h-4 w-36" />
+              <div className="skeleton h-6 w-10 ml-76" />
+            </div>
+          </div>
+        </div>
+        <div className="flex justify-end">
+          <div className="skeleton h-12 w-36" />
+        </div>
+      </div>
+    </AppLayout>
+  );
 
   return (
     <AppLayout>
       <div className="flex flex-col gap-6">
         <h2 className="text-2xl font-semibold text-base-content">Upwork Job Filter</h2>
 
-        {/* Success alert */}
-        {saved && (
-          <div role="alert" className="alert alert-success alert-soft">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 shrink-0 stroke-current" fill="none" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span>Filters successfully applied!</span>
-          </div>
-        )}
-
         {/* Active filter chips */}
-        <div className={`grid transition-all duration-300 ease-in-out ${activeChips.length > 0 ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
+        <div className={`grid transition-all duration-300 ease-in-out ${activeChips.length > 0 ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}${saved ? " opacity-60 pointer-events-none" : ""}`}>
           <div className="overflow-hidden">
           <div className="flex flex-wrap gap-2 items-center pb-0">
             {activeChips.map(({ key, label, onRemove }) => (
-              <button key={key} onClick={onRemove} className="btn btn-neutral btn-sm rounded-full gap-1">
+              <button key={key} onClick={onRemove} className="btn btn-neutral btn-sm rounded-full gap-1 shadow-none">
                 {label}
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             ))}
-            <button onClick={resetAll} className="btn btn-outline btn-neutral btn-sm rounded-full">
+            <button onClick={resetAll} className="btn btn-outline btn-neutral btn-sm rounded-full shadow-none">
               Reset All
             </button>
           </div>
@@ -221,7 +275,7 @@ export default function FiltersPage() {
         </div>
 
         {/* Filter card */}
-        <div className="card bg-base-100 shadow-sm">
+        <div className={`card bg-base-100 shadow-sm${saved ? " opacity-60 pointer-events-none" : ""}`}>
           <div className="card-body gap-6">
             <h3 className="text-lg font-bold text-base-content">Filters</h3>
             <div className="divider my-0" />
@@ -350,22 +404,42 @@ export default function FiltersPage() {
 
         {/* Action buttons */}
         <div className="flex justify-end gap-4">
+          {!saved && (
+            <button
+              className="btn btn-outline btn-soft btn-lg"
+              onClick={() => { setForm(committedForm); setSaved(true); }}
+            >
+              Cancel
+            </button>
+          )}
           <button
-            className="btn btn-outline btn-sm"
-            onClick={resetAll}
-            disabled={!dirty}
-          >
-            Cancel
-          </button>
-          <button
-            className="btn btn-primary btn-sm"
-            onClick={applyFilters}
-            disabled={!dirty || saving}
+            className="btn btn-primary btn-soft btn-lg"
+            onClick={saved ? () => setSaved(false) : applyFilters}
+            disabled={saving || (!saved && !dirty && hasChanges(committedForm))}
           >
             {saving && <span className="loading loading-spinner loading-xs" />}
-            Apply filters
+            {saved ? "Edit filters" : "Apply filters"}
           </button>
         </div>
+      </div>
+
+      {/* Toast notification */}
+      <div className={`toast toast-top toast-center transition-opacity duration-300 ${toastVisible ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
+        {toast?.type === "success" ? (
+          <div role="alert" className="alert alert-outline alert-success bg-[color-mix(in_oklch,var(--color-success)_10%,var(--color-base-100))]">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 shrink-0 stroke-current" fill="none" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>{toast.message}</span>
+          </div>
+        ) : (
+          <div role="alert" className="alert alert-outline alert-info bg-[color-mix(in_oklch,var(--color-info)_10%,var(--color-base-100))]">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 shrink-0 stroke-current" fill="none" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>{toast?.message}</span>
+          </div>
+        )}
       </div>
     </AppLayout>
   );
