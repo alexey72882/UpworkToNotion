@@ -73,25 +73,54 @@ const SUBCATEGORIES: Record<string, { key: string; label: string }[]> = {
 const CATEGORIES = Object.keys(SUBCATEGORIES);
 const JOB_TYPES = ["Hourly", "Fixed-Price"] as const;
 const EXP_LEVELS = ["Entry", "Intermediate", "Expert"] as const;
+const WORKLOADS = ["Full Time", "Part Time", "As Needed"] as const;
+const CLIENT_HIRES: { key: string; label: string }[] = [
+  { key: "0",  label: "No hires" },
+  { key: "1",  label: "1 to 9 hires" },
+  { key: "10", label: "10+ hires" },
+];
+const DURATIONS: { key: string; label: string }[] = [
+  { key: "Week",     label: "Less than one month" },
+  { key: "Month",    label: "1 to 3 months" },
+  { key: "Quarter",  label: "3 to 6 months" },
+  { key: "Semester", label: "More than 6 months" },
+  { key: "Ongoing",  label: "Ongoing" },
+];
 
 type WebFilter = {
+  skillExpression: string;
   category: string;
   subcategoryIds: string[];
   jobType: string[];
+  minBudget: string;
+  maxBudget: string;
+  minFixedBudget: string;
+  maxFixedBudget: string;
   experienceLevel: string[];
+  duration: string[];
+  workload: string[];
+  clientHires: string[];
   verifiedPaymentOnly: boolean;
 };
 
 const EMPTY: WebFilter = {
+  skillExpression: "",
   category: "",
   subcategoryIds: [],
   jobType: [],
+  minBudget: "",
+  maxBudget: "",
+  minFixedBudget: "",
+  maxFixedBudget: "",
   experienceLevel: [],
+  duration: [],
+  workload: [],
+  clientHires: [],
   verifiedPaymentOnly: false,
 };
 
 function hasChanges(f: WebFilter) {
-  return !!(f.category || f.subcategoryIds.length || f.jobType.length || f.experienceLevel.length || f.verifiedPaymentOnly);
+  return !!(f.skillExpression || f.category || f.subcategoryIds.length || f.jobType.length || f.minBudget || f.maxBudget || f.minFixedBudget || f.maxFixedBudget || f.experienceLevel.length || f.duration.length || f.workload.length || f.clientHires.length || f.verifiedPaymentOnly);
 }
 
 export default function FiltersPage() {
@@ -112,8 +141,9 @@ export default function FiltersPage() {
     fetch("/api/user/settings").then(r => r.json()).then(d => {
       console.log("[filters] GET settings:", d);
       if (d.ok && d.settings?.web_filter) {
-        setForm(d.settings.web_filter);
-        setCommittedForm(d.settings.web_filter);
+        const loaded = { ...EMPTY, ...d.settings.web_filter };
+        setForm(loaded);
+        setCommittedForm(loaded);
         setSaved(true);
       }
       setLoading(false);
@@ -134,6 +164,8 @@ export default function FiltersPage() {
     setForm(f => ({
       ...f,
       jobType: f.jobType.includes(v) ? f.jobType.filter(x => x !== v) : [...f.jobType, v],
+      ...(v === "Hourly" && f.jobType.includes("Hourly") && { minBudget: "", maxBudget: "" }),
+      ...(v === "Fixed-Price" && f.jobType.includes("Fixed-Price") && { minFixedBudget: "", maxFixedBudget: "" }),
     }));
     setSaved(false);
   }
@@ -142,6 +174,14 @@ export default function FiltersPage() {
     setForm(f => ({
       ...f,
       experienceLevel: f.experienceLevel.includes(v) ? f.experienceLevel.filter(x => x !== v) : [...f.experienceLevel, v],
+    }));
+    setSaved(false);
+  }
+
+  function toggleDuration(v: string) {
+    setForm(f => ({
+      ...f,
+      duration: f.duration.includes(v) ? f.duration.filter(x => x !== v) : [...f.duration, v],
     }));
     setSaved(false);
   }
@@ -187,6 +227,11 @@ export default function FiltersPage() {
   const subcats = form.category ? (SUBCATEGORIES[form.category] ?? []) : [];
 
   const activeChips: { key: string; label: string; onRemove: () => void }[] = [
+    ...(form.skillExpression ? [{
+      key: "skill",
+      label: form.skillExpression,
+      onRemove: () => { setForm(f => ({ ...f, skillExpression: "" })); setSaved(false); },
+    }] : []),
     ...form.subcategoryIds.map(key => ({
       key,
       label: SUBCATEGORIES[form.category]?.find(s => s.key === key)?.label ?? key,
@@ -197,10 +242,43 @@ export default function FiltersPage() {
       label: v,
       onRemove: () => toggleJobType(v),
     })),
+    ...(form.minBudget || form.maxBudget ? [{
+      key: "budget",
+      label: form.minBudget && form.maxBudget
+        ? `$${form.minBudget} – $${form.maxBudget}/hr`
+        : form.minBudget
+        ? `Min $${form.minBudget}/hr`
+        : `Max $${form.maxBudget}/hr`,
+      onRemove: () => { setForm(f => ({ ...f, minBudget: "", maxBudget: "" })); setSaved(false); },
+    }] : []),
+    ...(form.minFixedBudget || form.maxFixedBudget ? [{
+      key: "fixedBudget",
+      label: form.minFixedBudget && form.maxFixedBudget
+        ? `$${form.minFixedBudget} – $${form.maxFixedBudget} fixed`
+        : form.minFixedBudget
+        ? `Min $${form.minFixedBudget} fixed`
+        : `Max $${form.maxFixedBudget} fixed`,
+      onRemove: () => { setForm(f => ({ ...f, minFixedBudget: "", maxFixedBudget: "" })); setSaved(false); },
+    }] : []),
     ...form.experienceLevel.map(v => ({
       key: `exp:${v}`,
       label: v,
       onRemove: () => toggleExpLevel(v),
+    })),
+    ...form.duration.map(key => ({
+      key: `duration:${key}`,
+      label: DURATIONS.find(d => d.key === key)?.label ?? key,
+      onRemove: () => toggleDuration(key),
+    })),
+    ...form.workload.map(w => ({
+      key: `workload:${w}`,
+      label: w,
+      onRemove: () => { setForm(f => ({ ...f, workload: f.workload.filter(x => x !== w) })); setSaved(false); },
+    })),
+    ...form.clientHires.map(k => ({
+      key: `clientHires:${k}`,
+      label: CLIENT_HIRES.find(h => h.key === k)?.label ?? k,
+      onRemove: () => { setForm(f => ({ ...f, clientHires: f.clientHires.filter(x => x !== k) })); setSaved(false); },
     })),
     ...(form.verifiedPaymentOnly ? [{
       key: "verifiedPayment",
@@ -275,9 +353,24 @@ export default function FiltersPage() {
         </div>
 
         {/* Filter card */}
-        <div className={`card bg-base-100 shadow-sm${saved ? " opacity-60 pointer-events-none" : ""}`}>
+        <div className="card bg-base-100 shadow-sm">
           <div className="card-body gap-6">
+            <div className={`flex flex-col gap-6${saved ? " opacity-60 pointer-events-none" : ""}`}>
             <h3 className="text-lg font-bold text-base-content">Filters</h3>
+            <div className="divider my-0" />
+
+            {/* Keyword search */}
+            <div className="flex items-center gap-4">
+              <span className="text-sm text-base-content w-36 shrink-0">Keyword search</span>
+              <input
+                type="text"
+                className="input input-bordered w-72 shrink-0"
+                placeholder="e.g. UX/UI, React, Figma"
+                value={form.skillExpression}
+                onChange={e => { setForm(f => ({ ...f, skillExpression: e.target.value })); setSaved(false); }}
+              />
+            </div>
+
             <div className="divider my-0" />
 
             {/* Category */}
@@ -362,6 +455,66 @@ export default function FiltersPage() {
               </div>
             </div>
 
+            {/* Hourly rate — shown when Hourly is selected */}
+            <div className={`grid transition-all duration-300 ease-in-out ${form.jobType.includes("Hourly") ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
+              <div className="overflow-hidden">
+                <div className="divider my-0" />
+                <div className="flex items-center gap-4 pt-6">
+                  <span className="text-sm text-base-content w-36 shrink-0">Hourly rate</span>
+                  <div className="w-72 shrink-0" />
+                  <div className="flex items-center gap-3 ml-4">
+                    <input
+                      type="number"
+                      className="input input-bordered w-28"
+                      placeholder="Min $"
+                      min={0}
+                      value={form.minBudget}
+                      onChange={e => { setForm(f => ({ ...f, minBudget: e.target.value })); setSaved(false); }}
+                    />
+                    <span className="text-sm text-base-content/50">—</span>
+                    <input
+                      type="number"
+                      className="input input-bordered w-28"
+                      placeholder="Max $"
+                      min={0}
+                      value={form.maxBudget}
+                      onChange={e => { setForm(f => ({ ...f, maxBudget: e.target.value })); setSaved(false); }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Fixed price budget — shown when Fixed-Price is selected */}
+            <div className={`grid transition-all duration-300 ease-in-out ${form.jobType.includes("Fixed-Price") ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
+              <div className="overflow-hidden">
+                <div className="divider my-0" />
+                <div className="flex items-center gap-4 pt-6">
+                  <span className="text-sm text-base-content w-36 shrink-0">Fixed budget</span>
+                  <div className="w-72 shrink-0" />
+                  <div className="flex items-center gap-3 ml-4">
+                    <input
+                      type="number"
+                      className="input input-bordered w-28"
+                      placeholder="Min $"
+                      min={0}
+                      value={form.minFixedBudget}
+                      onChange={e => { setForm(f => ({ ...f, minFixedBudget: e.target.value })); setSaved(false); }}
+                    />
+                    <span className="text-sm text-base-content/50">—</span>
+                    <input
+                      type="number"
+                      className="input input-bordered w-28"
+                      placeholder="Max $"
+                      min={0}
+                      value={form.maxFixedBudget}
+                      onChange={e => { setForm(f => ({ ...f, maxFixedBudget: e.target.value })); setSaved(false); }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div className="divider my-0" />
 
             {/* Experience level */}
@@ -399,27 +552,109 @@ export default function FiltersPage() {
                 <span className="text-sm">Show only clients with verified payment method</span>
               </label>
             </div>
-          </div>
-        </div>
 
-        {/* Action buttons */}
-        <div className="flex justify-end gap-4">
-          {!saved && (
-            <button
-              className="btn btn-outline btn-soft btn-lg"
-              onClick={() => { setForm(committedForm); setSaved(true); }}
-            >
-              Cancel
-            </button>
-          )}
-          <button
-            className="btn btn-primary btn-soft btn-lg"
-            onClick={saved ? () => setSaved(false) : applyFilters}
-            disabled={saving || (!saved && !dirty && hasChanges(committedForm))}
-          >
-            {saving && <span className="loading loading-spinner loading-xs" />}
-            {saved ? "Edit filters" : "Apply filters"}
-          </button>
+            <div className="divider my-0" />
+
+            {/* Project length */}
+            <div className="flex items-start gap-4">
+              <span className="text-sm text-base-content w-36 shrink-0 mt-0.5">Project length</span>
+              <div className="w-72 shrink-0" />
+              <div className="flex gap-8 ml-4">
+                <div className="flex flex-col gap-3">
+                  {DURATIONS.slice(0, 3).map(d => (
+                    <label key={d.key} className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="checkbox checkbox-sm"
+                        checked={form.duration.includes(d.key)}
+                        onChange={() => toggleDuration(d.key)}
+                      />
+                      <span className="text-sm">{d.label}</span>
+                    </label>
+                  ))}
+                </div>
+                <div className="flex flex-col gap-3">
+                  {DURATIONS.slice(3).map(d => (
+                    <label key={d.key} className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="checkbox checkbox-sm"
+                        checked={form.duration.includes(d.key)}
+                        onChange={() => toggleDuration(d.key)}
+                      />
+                      <span className="text-sm">{d.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="divider my-0" />
+
+            {/* Workload */}
+            <div className="flex items-center gap-4">
+              <span className="text-sm text-base-content w-36 shrink-0">Workload</span>
+              <div className="w-72 shrink-0" />
+              <div className="flex gap-6 ml-4">
+                {WORKLOADS.map(w => (
+                  <label key={w} className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="checkbox checkbox-sm"
+                      checked={form.workload.includes(w)}
+                      onChange={() => { setForm(f => ({ ...f, workload: f.workload.includes(w) ? f.workload.filter(x => x !== w) : [...f.workload, w] })); setSaved(false); }}
+                    />
+                    <span className="text-sm">{w}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="divider my-0" />
+
+            {/* Client history */}
+            <div className="flex items-start gap-4">
+              <span className="text-sm text-base-content w-36 shrink-0 mt-0.5">Client history</span>
+              <div className="w-72 shrink-0" />
+              <div className="flex gap-6 ml-4">
+                {CLIENT_HIRES.map(h => (
+                  <label key={h.key} className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="checkbox checkbox-sm"
+                      checked={form.clientHires.includes(h.key)}
+                      onChange={() => { setForm(f => ({ ...f, clientHires: f.clientHires.includes(h.key) ? f.clientHires.filter(x => x !== h.key) : [...f.clientHires, h.key] })); setSaved(false); }}
+                    />
+                    <span className="text-sm">{h.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="divider my-0" />
+
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex justify-end gap-4">
+              {!saved && (
+                <button
+                  className="btn btn-outline btn-soft btn-lg"
+                  onClick={() => { setForm(committedForm); setSaved(true); }}
+                >
+                  Cancel
+                </button>
+              )}
+              <button
+                className="btn btn-primary btn-soft btn-lg"
+                onClick={saved ? () => setSaved(false) : applyFilters}
+                disabled={saving || (!saved && !dirty && hasChanges(committedForm))}
+              >
+                {saving && <span className="loading loading-spinner loading-xs" />}
+                {saved ? "Edit filters" : "Apply filters"}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 

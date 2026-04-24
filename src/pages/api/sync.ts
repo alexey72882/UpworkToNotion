@@ -30,6 +30,8 @@ type UserSettings = {
   filters_db_id: string | null;
   diary_db_id: string | null;
   upwork_person_id: string | null;
+  upwork_name: string | null;
+  total_jobs_created: number | null;
 };
 
 async function syncUser(settings: UserSettings) {
@@ -38,6 +40,24 @@ async function syncUser(settings: UserSettings) {
   if (!token) {
     logger.warn({ userId: settings.user_id }, "no Upwork token for user, skipping");
     return null;
+  }
+
+  // One-time: fetch and save first name if missing
+  if (!settings.upwork_name) {
+    try {
+      const meRes = await fetch("https://api.upwork.com/graphql", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ query: "{ user { name } }" }),
+      });
+      const me = await meRes.json();
+      const firstName = String(me?.data?.user?.name ?? "").split(/\s+/)[0];
+      if (firstName) {
+        await getSupabase().from("user_settings").update({ upwork_name: firstName }).eq("user_id", settings.user_id);
+      }
+    } catch (err) {
+      logger.warn({ err }, "Could not fetch Upwork name");
+    }
   }
 
   const { rangeStart, rangeEnd } = getCurrentWeekRange();
@@ -154,10 +174,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
         logger.error({ userId, err }, "user sync failed, skipping");
       }
 
-      // Update last_sync_at
+      // Update last_sync_at and increment cumulative counter
       await getSupabase()
         .from("user_settings")
-        .update({ last_sync_at: new Date().toISOString(), last_sync_result: totals, updated_at: new Date().toISOString() })
+        .update({
+          last_sync_at: new Date().toISOString(),
+          last_sync_result: totals,
+          total_jobs_created: (settings.total_jobs_created ?? 0) + totals.jobs.created,
+          updated_at: new Date().toISOString(),
+        })
         .eq("user_id", userId);
     }
 

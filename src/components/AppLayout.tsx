@@ -58,10 +58,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }
 
   useEffect(() => {
-    getSupabaseBrowser().auth.getUser().then(({ data: { user } }) => {
-      const email = user?.email ?? "";
-      setInitials(email.slice(0, 2).toUpperCase());
-    });
+    async function loadUser() {
+      const { data: { user } } = await getSupabaseBrowser().auth.getUser();
+      if (!user) return;
+      const d = await fetch("/api/user/settings").then((r) => r.json());
+      const name: string = d.ok ? (d.settings?.upwork_name ?? "") : "";
+      if (name) {
+        setInitials(name[0].toUpperCase());
+      } else {
+        setInitials((user.email ?? "").slice(0, 2).toUpperCase());
+      }
+    }
+    loadUser();
   }, []);
 
   async function signOut() {
@@ -101,7 +109,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
         {/* Page content */}
         <main className="flex-1 flex flex-col p-8">
-          {children}
+          <div className="w-full max-w-6xl mx-auto">
+            {children}
+          </div>
         </main>
       </div>
 

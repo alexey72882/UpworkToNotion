@@ -199,17 +199,23 @@ export default async function handler(
             Authorization: `Bearer ${data.access_token}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ query: "{ user { id } }" }),
+          body: JSON.stringify({ query: "{ user { id name } }" }),
         });
         const me = await meRes.json();
         const personId = String(me?.data?.user?.id ?? "");
+        const upworkName = String(me?.data?.user?.name ?? "").split(/\s+/)[0];
         if (personId && userId) {
           const db = getSupabase();
           const { data: existing } = await db.from("user_settings").select("user_id").eq("user_id", userId).maybeSingle();
+          const fields = {
+            upwork_person_id: personId,
+            ...(upworkName && { upwork_name: upworkName }),
+            updated_at: new Date().toISOString(),
+          };
           if (existing) {
-            await db.from("user_settings").update({ upwork_person_id: personId, updated_at: new Date().toISOString() }).eq("user_id", userId);
+            await db.from("user_settings").update(fields).eq("user_id", userId);
           } else {
-            await db.from("user_settings").insert({ user_id: userId, upwork_person_id: personId, updated_at: new Date().toISOString() });
+            await db.from("user_settings").insert({ user_id: userId, ...fields });
           }
         }
       } catch (meError) {
