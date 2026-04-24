@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/router";
 import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
+import Logo from "@/components/Logo";
 
 export default function AuthCallback() {
   const router = useRouter();
@@ -26,8 +27,9 @@ export default function AuthCallback() {
   }, [router]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <p className="text-gray-500">Signing you in…</p>
+    <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-base-200">
+      <Logo size={40} />
+      <p className="text-sm text-base-content/50">Signing you in…</p>
     </div>
   );
 }

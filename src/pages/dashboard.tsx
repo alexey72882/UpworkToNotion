@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
+import AppLayout from "@/components/AppLayout";
 
 type SyncResult = { fetched: number; created: number; updated: number; skipped: number };
 type Settings = {
@@ -17,7 +18,6 @@ type Settings = {
 export default function Dashboard() {
   const router = useRouter();
   const [settings, setSettings] = useState<Settings | null>(null);
-  const [userEmail, setUserEmail] = useState<string>("");
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState("");
   const [syncError, setSyncError] = useState(false);
@@ -25,19 +25,12 @@ export default function Dashboard() {
   useEffect(() => {
     const supabase = getSupabaseBrowser();
     supabase.auth.getUser().then(({ data: { user } }) => {
-      if (!user) { router.replace("/auth/signin"); return; }
-      setUserEmail(user.email ?? "");
+      if (!user) router.replace("/auth/signin");
     });
     fetch("/api/user/settings").then((r) => r.json()).then((d) => {
       if (d.ok) setSettings(d.settings ?? {});
     });
   }, [router]);
-
-  async function signOut() {
-    const supabase = getSupabaseBrowser();
-    await supabase.auth.signOut();
-    router.replace("/auth/signin");
-  }
 
   async function syncNow() {
     setSyncing(true);
@@ -63,46 +56,41 @@ export default function Dashboard() {
 
   const notionOk = !!(settings?.notion_token && settings.job_feed_db_id);
   const upworkOk = !!settings?.upwork_person_id;
+  const allConnected = notionOk && upworkOk;
 
   return (
-    <div className="min-h-screen bg-base-200 py-10 px-4">
-      <div className="max-w-lg mx-auto">
+    <AppLayout>
+      <h2 className="text-2xl font-semibold text-base-content mb-6">Good Morning!</h2>
 
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold">Dashboard</h1>
-          <div className="flex gap-3 items-center">
-            <span className="text-sm text-base-content/50">{userEmail}</span>
-            <button onClick={signOut} className="btn btn-ghost btn-sm">Sign out</button>
-          </div>
-        </div>
-
-        {/* Connections */}
-        <div className="card bg-base-100 shadow mb-4">
-          <div className="card-body">
-            <h2 className="card-title text-base">Connections</h2>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-sm">Upwork</span>
-                <span className={`badge ${upworkOk ? "badge-success" : "badge-error"} badge-sm`}>
-                  {upworkOk ? "Connected" : "Not connected"}
-                </span>
+      {/* Setup card — shown when not fully connected */}
+      {!allConnected && (
+        <div className="flex justify-center mt-6">
+          <div className="card w-96 bg-base-100 card-lg shadow-sm">
+            <div className="card-body">
+              <h2 className="card-title">Connect your accounts to get started</h2>
+              <p className="text-sm text-base-content/70">
+                Set up your integrations before syncing Upwork data to Notion.
+              </p>
+              <ul className="text-sm text-base-content/70 list-none mt-1 space-y-0.5">
+                {!upworkOk && <li>1. Connect Upwork</li>}
+                {!notionOk && <li>{!upworkOk ? "2" : "1"}. Connect Notion</li>}
+              </ul>
+              <div className="justify-end card-actions mt-2">
+                <Link href="/settings" className="btn btn-primary btn-sm">
+                  Go to integrations
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                  </svg>
+                </Link>
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm">Notion</span>
-                <span className={`badge ${notionOk ? "badge-success" : "badge-error"} badge-sm`}>
-                  {notionOk ? "Connected" : "Not configured"}
-                </span>
-              </div>
-            </div>
-            <div className="card-actions mt-2">
-              <Link href="/settings" className="btn btn-ghost btn-xs">Edit settings →</Link>
             </div>
           </div>
         </div>
+      )}
 
-        {/* Sync */}
-        <div className="card bg-base-100 shadow mb-4">
+      {/* Sync card — shown when connected */}
+      {allConnected && (
+        <div className="card bg-base-100 shadow max-w-xl mb-4">
           <div className="card-body">
             <h2 className="card-title text-base">Sync</h2>
             {settings?.last_sync_at && (
@@ -116,30 +104,29 @@ export default function Dashboard() {
               </p>
             )}
             {syncMsg && (
-              <div className={`alert ${syncError ? "alert-error" : "alert-success"} py-2 text-sm`}>
-                {syncMsg}
+              <div role="alert" className={`alert alert-soft ${syncError ? "alert-error" : "alert-success"}`}>
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 shrink-0 stroke-current" fill="none" viewBox="0 0 24 24">
+                  {syncError
+                    ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    : <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  }
+                </svg>
+                <span>{syncMsg}</span>
               </div>
             )}
             <div className="card-actions mt-1">
-              <button
-                onClick={syncNow}
-                disabled={syncing || !notionOk || !upworkOk}
-                className="btn btn-soft btn-primary btn-sm"
-              >
+              <button onClick={syncNow} disabled={syncing} className="btn btn-soft btn-primary btn-sm">
                 {syncing && <span className="loading loading-spinner loading-xs" />}
                 {syncing ? "Syncing…" : "Sync now"}
               </button>
             </div>
-            {(!notionOk || !upworkOk) && (
-              <p className="text-xs text-base-content/40">Connect Upwork and configure Notion in settings first.</p>
-            )}
           </div>
         </div>
+      )}
 
-        <p className="text-xs text-base-content/30 text-center">
-          Sync runs automatically every 10 minutes via GitHub Actions.
-        </p>
-      </div>
-    </div>
+      <p className="text-xs text-base-content/40">
+        Sync runs automatically every 10 minutes via GitHub Actions.
+      </p>
+    </AppLayout>
   );
 }

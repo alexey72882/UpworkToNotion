@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Logo from "@/components/Logo";
 
 const features = [
   { title: "Job feed", desc: "Filter by category, budget, experience level and more. New jobs appear in Notion every 30 minutes." },
@@ -10,6 +11,7 @@ export default function Landing() {
   return (
     <div className="min-h-screen bg-base-100">
       <div className="max-w-2xl mx-auto px-6 py-20">
+        <div className="mb-8"><Logo size={40} /></div>
         <h1 className="text-4xl font-bold tracking-tight mb-4">
           Your Upwork jobs, automatically synced to Notion
         </h1>

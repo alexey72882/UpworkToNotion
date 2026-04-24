@@ -74,6 +74,9 @@ npm run test      # run Vitest once
 npm run test:watch # run Vitest in watch mode
 ```
 
+## daisyUI reference
+Use this for all UI components: @docs/llms.txt
+
 ## Architecture
 
 **Stack:** Next.js 16 (Pages Router) + TypeScript, deployed serverless on Vercel. Tests via Vitest.
