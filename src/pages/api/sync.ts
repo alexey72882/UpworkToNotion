@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { readJobFilters, upsertJobFeedItem, upsertContractDayItem, getNotionForUser } from "@/lib/notion";
+import { upsertJobFeedItem, upsertContractDayItem, getNotionForUser } from "@/lib/notion";
 import { fetchUpworkItems, fetchJobFeed, fetchContractDays, getCurrentWeekRange } from "@/lib/upwork";
+import { webFilterToJobFilters } from "@/lib/webFilter";
 import { getValidAccessToken } from "@/lib/upworkToken";
 import { getSupabase } from "@/lib/supabase";
 import { getSupabaseServer } from "@/lib/supabaseServer";
@@ -27,11 +28,11 @@ type UserSettings = {
   user_id: string;
   notion_token: string;
   job_feed_db_id: string | null;
-  filters_db_id: string | null;
   diary_db_id: string | null;
   upwork_person_id: string | null;
   upwork_name: string | null;
   total_jobs_created: number | null;
+  web_filter: unknown | null;
 };
 
 async function syncUser(settings: UserSettings) {
@@ -63,9 +64,7 @@ async function syncUser(settings: UserSettings) {
   const { rangeStart, rangeEnd } = getCurrentWeekRange();
   const [proposals, jobItems, contractItems] = await Promise.all([
     fetchUpworkItems(token),
-    settings.filters_db_id
-      ? fetchJobFeed(await readJobFilters({ notion, dbId: settings.filters_db_id }), token)
-      : Promise.resolve([]),
+    fetchJobFeed(webFilterToJobFilters(settings.web_filter as never), token),
     settings.diary_db_id && settings.upwork_person_id
       ? fetchContractDays(rangeStart, rangeEnd, token, settings.upwork_person_id)
       : Promise.resolve([]),

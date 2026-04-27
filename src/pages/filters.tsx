@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
 import AppLayout from "@/components/AppLayout";
+import type { WebFilter } from "@/lib/webFilter";
 
 // Category → subcategory label mapping (display label → full key for API)
 const SUBCATEGORIES: Record<string, { key: string; label: string }[]> = {
@@ -73,7 +74,6 @@ const SUBCATEGORIES: Record<string, { key: string; label: string }[]> = {
 const CATEGORIES = Object.keys(SUBCATEGORIES);
 const JOB_TYPES = ["Hourly", "Fixed-Price"] as const;
 const EXP_LEVELS = ["Entry", "Intermediate", "Expert"] as const;
-const WORKLOADS = ["Full Time", "Part Time", "As Needed"] as const;
 const CLIENT_HIRES: { key: string; label: string }[] = [
   { key: "0",  label: "No hires" },
   { key: "1",  label: "1 to 9 hires" },
@@ -87,21 +87,6 @@ const DURATIONS: { key: string; label: string }[] = [
   { key: "Ongoing",  label: "Ongoing" },
 ];
 
-type WebFilter = {
-  skillExpression: string;
-  category: string;
-  subcategoryIds: string[];
-  jobType: string[];
-  minBudget: string;
-  maxBudget: string;
-  minFixedBudget: string;
-  maxFixedBudget: string;
-  experienceLevel: string[];
-  duration: string[];
-  workload: string[];
-  clientHires: string[];
-  verifiedPaymentOnly: boolean;
-};
 
 const EMPTY: WebFilter = {
   skillExpression: "",
@@ -114,13 +99,12 @@ const EMPTY: WebFilter = {
   maxFixedBudget: "",
   experienceLevel: [],
   duration: [],
-  workload: [],
   clientHires: [],
   verifiedPaymentOnly: false,
 };
 
 function hasChanges(f: WebFilter) {
-  return !!(f.skillExpression || f.category || f.subcategoryIds.length || f.jobType.length || f.minBudget || f.maxBudget || f.minFixedBudget || f.maxFixedBudget || f.experienceLevel.length || f.duration.length || f.workload.length || f.clientHires.length || f.verifiedPaymentOnly);
+  return !!(f.skillExpression || f.category || f.subcategoryIds.length || f.jobType.length || f.minBudget || f.maxBudget || f.minFixedBudget || f.maxFixedBudget || f.experienceLevel.length || f.duration.length || f.clientHires.length || f.verifiedPaymentOnly);
 }
 
 export default function FiltersPage() {
@@ -269,11 +253,6 @@ export default function FiltersPage() {
       key: `duration:${key}`,
       label: DURATIONS.find(d => d.key === key)?.label ?? key,
       onRemove: () => toggleDuration(key),
-    })),
-    ...form.workload.map(w => ({
-      key: `workload:${w}`,
-      label: w,
-      onRemove: () => { setForm(f => ({ ...f, workload: f.workload.filter(x => x !== w) })); setSaved(false); },
     })),
     ...form.clientHires.map(k => ({
       key: `clientHires:${k}`,
@@ -586,27 +565,6 @@ export default function FiltersPage() {
                     </label>
                   ))}
                 </div>
-              </div>
-            </div>
-
-            <div className="divider my-0" />
-
-            {/* Workload */}
-            <div className="flex items-center gap-4">
-              <span className="text-sm text-base-content w-36 shrink-0">Workload</span>
-              <div className="w-72 shrink-0" />
-              <div className="flex gap-6 ml-4">
-                {WORKLOADS.map(w => (
-                  <label key={w} className="flex items-center gap-3 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      className="checkbox checkbox-sm"
-                      checked={form.workload.includes(w)}
-                      onChange={() => { setForm(f => ({ ...f, workload: f.workload.includes(w) ? f.workload.filter(x => x !== w) : [...f.workload, w] })); setSaved(false); }}
-                    />
-                    <span className="text-sm">{w}</span>
-                  </label>
-                ))}
               </div>
             </div>
 

@@ -36,7 +36,6 @@ export type JobFilter = {
   experienceLevel?: "Entry" | "Intermediate" | "Expert";
   verifiedPaymentOnly?: boolean;
   duration?: string[];           // "Week" | "Month" | "Quarter" | "Semester" | "Ongoing"
-  workload?: string;             // "Full Time" | "Part Time" | "As Needed"
   daysPosted?: number;
   maxProposals?: number;
   minClientHires?: number;
@@ -105,9 +104,15 @@ export type JobFeedItem = {
   description?: string;
   client?: string;
   value?: number;
+  rateMin?: number;
+  rateMax?: number;
   url?: string;
   created?: string;
   jobType?: "Hourly" | "Fixed";
+  experienceLevel?: "Entry" | "Intermediate" | "Expert";
+  projectLength?: string;
+  workload?: string;
+  paymentVerified?: boolean;
   applied?: boolean;
   proposalUrl?: string;
 };
@@ -123,9 +128,15 @@ function buildJobFeedProps(item: JobFeedItem): Record<string, any> {
   if (item.client)
     props["Client"] = { rich_text: [{ text: { content: item.client } }] };
   if (item.value !== undefined) props["Value"] = { number: item.value };
+  if (item.rateMin !== undefined) props["Rate Min"] = { number: item.rateMin };
+  if (item.rateMax !== undefined) props["Rate Max"] = { number: item.rateMax };
   if (item.url) props["Upwork Link"] = { url: item.url };
   if (item.created) props["Created"] = { date: { start: item.created } };
   if (item.jobType) props["Job Type"] = { select: { name: item.jobType } };
+  if (item.experienceLevel) props["Experience Level"] = { select: { name: item.experienceLevel } };
+  if (item.projectLength) props["Project Length"] = { select: { name: item.projectLength } };
+  if (item.workload) props["Workload"] = { select: { name: item.workload } };
+  if (item.paymentVerified !== undefined) props["Payment Verified"] = { checkbox: item.paymentVerified };
   if (item.applied !== undefined) props["Applied"] = { checkbox: item.applied };
   if (item.proposalUrl) props["Proposal link"] = { url: item.proposalUrl };
   return props;

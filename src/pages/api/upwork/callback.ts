@@ -222,7 +222,19 @@ export default async function handler(
         logger.warn({ err: meError }, "Could not fetch Upwork person ID");
       }
 
-      return res.status(200).json({ ok: true, saved: true, endpoint: result.endpoint });
+      // Verify the token landed in the user-specific row (diagnose save path issues)
+      let savedToUserRow = false;
+      if (userId) {
+        const { data: check } = await getSupabase()
+          .from("upwork_tokens")
+          .select("access_token")
+          .eq("user_id", userId)
+          .maybeSingle();
+        savedToUserRow = !!check;
+      }
+      logger.info({ userId, savedToUserRow }, "upwork token save verification");
+
+      return res.status(200).json({ ok: true, saved: true, savedToUserRow, endpoint: result.endpoint });
     } catch (saveError) {
       const supabaseMessage =
         saveError instanceof Error

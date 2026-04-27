@@ -199,9 +199,15 @@ export type JobFeedResult = {
   description?: string;
   client?: string;
   value?: number;
+  rateMin?: number;
+  rateMax?: number;
   url?: string;
   created?: string;
   jobType?: "Hourly" | "Fixed";
+  experienceLevel?: "Entry" | "Intermediate" | "Expert";
+  projectLength?: string;
+  workload?: string;
+  paymentVerified?: boolean;
   applied: boolean;
   proposalUrl?: string;
 };
@@ -318,21 +324,7 @@ function buildJobFilter(filter: JobFilter): string {
     parts.push(`experienceLevel_eq: ${lvl}`);
   }
 
-  if (filter.minBudget !== undefined || filter.maxBudget !== undefined) {
-    const b: string[] = [];
-    if (filter.minBudget !== undefined) b.push(`rangeStart: ${filter.minBudget}`);
-    if (filter.maxBudget !== undefined) b.push(`rangeEnd: ${filter.maxBudget}`);
-    parts.push(`budgetRange_eq: { ${b.join(", ")} }`);
-  }
 
-  if (filter.duration?.length)
-    parts.push(`duration_any: [${filter.duration.map(d => d.toUpperCase()).join(", ")}]`);
-
-  if (filter.workload)
-    parts.push(`workload_eq: ${filter.workload.replace(/ /g, "_").toUpperCase()}`);
-
-  if (filter.daysPosted !== undefined)
-    parts.push(`daysPosted_eq: ${filter.daysPosted}`);
 
   if (filter.maxProposals !== undefined)
     parts.push(`proposalRange_eq: { rangeEnd: ${filter.maxProposals} }`);
@@ -340,20 +332,34 @@ function buildJobFilter(filter: JobFilter): string {
   if (filter.minClientHires !== undefined)
     parts.push(`clientHiresRange_eq: { rangeStart: ${filter.minClientHires} }`);
 
-  if (filter.minClientRating !== undefined)
-    parts.push(`clientFeedBackRange_eq: { rangeStart: ${filter.minClientRating} }`);
-
   if (filter.previousClientsOnly) parts.push(`previousClients_eq: true`);
   if (filter.enterpriseOnly) parts.push(`enterpriseOnly_eq: true`);
 
   return parts.join("\n    ");
 }
 
+const DURATION_KEY_TO_LABEL: Record<string, string> = {
+  Week: "Less than 1 month",
+  Month: "1 to 3 months",
+  Quarter: "3 to 6 months",
+  Semester: "More than 6 months",
+  Ongoing: "Ongoing",
+};
+
+
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+const EXP_LEVEL_MAP: Record<string, "Entry" | "Intermediate" | "Expert"> = {
+  ENTRY_LEVEL: "Entry",
+  INTERMEDIATE: "Intermediate",
+  EXPERT: "Expert",
+};
+
 function mapJobFeedNode(node: any): JobFeedResult {
   const fixedAmount = Number(node.amount?.rawValue ?? 0);
+  const hourlyMin = Number(node.hourlyBudgetMin?.rawValue ?? 0);
   const hourlyMax = Number(node.hourlyBudgetMax?.rawValue ?? 0);
-  const value = fixedAmount > 0 ? fixedAmount : hourlyMax > 0 ? hourlyMax : undefined;
+  const value = fixedAmount > 0 ? fixedAmount : undefined;
   const jobType: "Hourly" | "Fixed" | undefined =
     hourlyMax > 0 ? "Hourly" : fixedAmount > 0 ? "Fixed" : undefined;
   return {
@@ -362,9 +368,15 @@ function mapJobFeedNode(node: any): JobFeedResult {
     description: node.description ?? undefined,
     client: node.client?.location?.country ?? undefined,
     value,
+    rateMin: hourlyMin > 0 ? hourlyMin : undefined,
+    rateMax: hourlyMax > 0 ? hourlyMax : undefined,
     url: node.id ? `https://www.upwork.com/jobs/${node.id}` : undefined,
     created: node.publishedDateTime ?? undefined,
     jobType,
+    experienceLevel: EXP_LEVEL_MAP[node.experienceLevel] ?? undefined,
+    projectLength: node.durationLabel ?? undefined,
+    workload: node.engagement ?? undefined,
+    paymentVerified: node.client?.verificationStatus === "VERIFIED",
     applied: node.applied === true,
   };
 }
@@ -394,9 +406,13 @@ export async function fetchJobFeed(filters: JobFilter[], accessToken?: string): 
         title
         description
         amount { rawValue currency }
+        hourlyBudgetMin { rawValue }
         hourlyBudgetMax { rawValue }
         publishedDateTime
-        client { location { country } }
+        experienceLevel
+        durationLabel
+        engagement
+        client { verificationStatus location { country } }
         applied
       }
     }
@@ -419,10 +435,22 @@ export async function fetchJobFeed(filters: JobFilter[], accessToken?: string): 
     const edges = json?.data?.marketplaceJobPostingsSearch?.edges ?? [];
     logger.info({ filter: filter.name, edgeCount: edges.length }, "fetched jobs for filter");
 
+    const allowedDurations = filter.duration?.length
+      ? new Set(filter.duration.map(d => DURATION_KEY_TO_LABEL[d]).filter(Boolean))
+      : null;
+
     for (const edge of edges) {
       const raw = edge?.node ?? edge;
       const mapped = mapJobFeedNode(raw);
       if (seen.has(mapped.externalId)) continue;
+      if (allowedDurations && !allowedDurations.has(mapped.projectLength ?? "")) continue;
+      if (mapped.jobType === "Hourly") {
+        if (filter.minBudget !== undefined && (mapped.rateMax ?? 0) < filter.minBudget) continue;
+        if (filter.maxBudget !== undefined && (mapped.rateMin ?? Infinity) > filter.maxBudget) continue;
+      } else {
+        if (filter.minBudget !== undefined && (mapped.value ?? 0) < filter.minBudget) continue;
+        if (filter.maxBudget !== undefined && (mapped.value ?? Infinity) > filter.maxBudget) continue;
+      }
       seen.add(mapped.externalId);
       items.push(mapped);
     }

@@ -24,8 +24,9 @@ function greeting(name?: string) {
 }
 
 function timeAgo(iso: string) {
-  const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
-  if (mins < 1) return "just now";
+  const secs = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (secs < 60) return `${secs}s ago`;
+  const mins = Math.floor(secs / 60);
   if (mins === 1) return "1 min ago";
   if (mins < 60) return `${mins} mins ago`;
   const hrs = Math.floor(mins / 60);
@@ -38,6 +39,12 @@ export default function Dashboard() {
   const [syncing, setSyncing] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
   const [toastVisible, setToastVisible] = useState(false);
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    const id = setInterval(() => setTick(t => t + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
 
   function showToast(message: string, type: "success" | "error") {
     setToast({ message, type });
@@ -51,9 +58,15 @@ export default function Dashboard() {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) router.replace("/auth/signin");
     });
-    fetch("/api/user/settings").then((r) => r.json()).then((d) => {
-      if (d.ok) setSettings(d.settings ?? {});
-    });
+
+    const fetchSettings = () =>
+      fetch("/api/user/settings").then((r) => r.json()).then((d) => {
+        if (d.ok) setSettings(d.settings ?? {});
+      });
+
+    fetchSettings();
+    const id = setInterval(fetchSettings, 15000);
+    return () => clearInterval(id);
   }, [router]);
 
   async function syncNow() {
@@ -141,7 +154,7 @@ export default function Dashboard() {
                 </svg>
               </div>
               <div className="stat-title">Update frequency</div>
-              <div className="stat-value">10<span className="text-lg font-normal text-base-content/50 ml-1">min</span></div>
+              <div className="stat-value">1<span className="text-lg font-normal text-base-content/50 ml-1">min</span></div>
               <div className="stat-desc">
                 {settings?.last_sync_at ? `Last sync ${timeAgo(settings.last_sync_at)}` : "Never synced"}
               </div>
