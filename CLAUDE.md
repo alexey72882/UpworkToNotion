@@ -81,13 +81,13 @@ Use this for all UI components: @docs/llms.txt
 
 **Stack:** Next.js 16 (Pages Router) + TypeScript, deployed serverless on Vercel. Tests via Vitest.
 
-**Flow:** Vercel Cron → `/api/sync` → Upwork API → Zod validation → Supabase log → Notion upsert → Pino logs
+**Flow:** cron-job.org (1 min) → `/api/sync` → Upwork API → Zod validation → Supabase log → Notion upsert → Pino logs
 
 ### Key files
 
 | Path | Purpose |
 |------|---------|
-| `src/pages/api/sync.ts` | Main cron entry point (GET only; Vercel calls this every 3 hours per `vercel.json`) |
+| `src/pages/api/sync.ts` | Main sync entry point (GET only; triggered every 1 min by cron-job.org) |
 | `src/pages/api/upwork/auth.ts` | Starts Upwork OAuth2 flow — redirects user to Upwork |
 | `src/pages/api/upwork/callback.ts` | Receives OAuth code, exchanges for tokens with retry logic, saves to Supabase |
 | `src/pages/api/upwork/fetch.ts` | Calls Upwork REST API via `callUpwork` helper |
@@ -279,7 +279,7 @@ Every PR body must include a spec link matching `specs/[0-9]{4}-` — the `spec-
 
 The product spec lives in `specs/specs/0001-upwork-notion-v0.1.md`. The sync pipeline is fully wired up and working end-to-end.
 
-## Current status (as of 2026-04-14)
+## Current status (as of 2026-04-27)
 
 ### What's done
 
@@ -296,7 +296,28 @@ The product spec lives in `specs/specs/0001-upwork-notion-v0.1.md`. The sync pip
   - `NOTION_DIARY_DATABASE_ID` — per-day work diary rows
 - Notion client pinned to API version `2022-06-28` (SDK default `2025-09-03` removed the `databases/query` endpoint)
 - Job feed filters: human-readable multi-select labels in Notion → numeric Upwork IDs via `CATEGORY_ID_MAP` / `SUBCATEGORY_ID_MAP` in `upwork.ts`. 12 filter fields supported (skill, category, subcategory, job type, budget, experience level, verified payment, duration, workload, proposals cap, client hires/rating, flags)
-- Deployed to Vercel, cron runs daily at 9am UTC
+- Sync runs every 1 minute via cron-job.org (external cron hitting `/api/sync`). GitHub Actions schedule disabled. Vercel has no cron config.
+- Hourly job rates stored as separate `Rate Min` and `Rate Max` Number fields in Notion Job Feed DB. `Value` field is fixed-price jobs only.
+- Budget filter uses range overlap: keep hourly jobs where `rateMax >= filter.minBudget` AND `rateMin <= filter.maxBudget`. For fixed jobs, filter against `value` directly.
+- Dashboard auto-refreshes settings every 15 seconds; last sync counter ticks in real time (seconds).
+
+### Notion Job Feed DB — updated schema
+
+| Property | Type | Notes |
+|----------|------|-------|
+| `Name` | Title | Job title |
+| `Description` | Rich text | Truncated to 2000 chars |
+| `External ID` | Rich text | `job-<upwork_id>` — dedup key |
+| `Client` | Rich text | Client's country |
+| `Value` | Number | Fixed-price amount only (USD). Empty for hourly jobs. |
+| `Rate Min` | Number | Hourly job minimum rate (USD). Empty for fixed jobs. |
+| `Rate Max` | Number | Hourly job maximum rate (USD). Empty for fixed jobs. |
+| `Job Type` | Select | `Hourly` or `Fixed` |
+| `Workload` | Select | Raw `engagement` string from API (e.g. "Less than 30 hrs/week"). Populated when API returns it (~50% of jobs). Use for manual Notion filtering only — not filtered in pipeline. |
+| `Applied` | Checkbox | True if you submitted a proposal |
+| `Proposal link` | URL | Link to your proposal (when Applied = true) |
+| `Upwork Link` | URL | Job posting URL |
+| `Created` | Date | Published date |
 
 ### Contracts sync — 3-step work diary approach
 
@@ -310,19 +331,32 @@ The product spec lives in `specs/specs/0001-upwork-notion-v0.1.md`. The sync pip
 ### Known quirks
 
 - `vendorProposals` pagination limit is 40 (`first: 41+` returns VJCA-6 error)
-- `marketplaceJobPostingsSearch` has no pagination — always returns 10 results per query
+- `marketplaceJobPostingsSearch` has no pagination — always returns 10 results per query, no `pagination` or `paginationInput` argument exists. This is a hard cap with no workaround at this API tier.
+- `marketplaceJobPostingsSearch` only accepts 3 arguments: `marketPlaceJobFilter`, `searchType`, `sortAttributes`. Confirmed via schema introspection.
 - Notion SDK v5 ships with API version `2025-09-03` which removed `databases/query` — must pass `notionVersion: "2022-06-28"` when creating the client
 - Upwork OAuth scopes are configured at app level in developer portal, not via `scope` param in auth URL — passing `scope` returns `invalid_scope` error
 - `workDays` / `workDiaryContract` date format: `yyyyMMdd` (not ISO)
 - Weekly earnings blocked — requires Payments scope (`transactionHistory` returns "Authorization failed")
 - Category multi-select names cannot contain commas — `"Web / Mobile & Software Dev"` used instead of `"Web, Mobile & Software Dev"`
 - `Experience Level` is multi-select in Notion but Upwork API only accepts one value — only the first selected option is used
+- `workload_eq` filter (`FULL_TIME` / `PART_TIME`) on `marketplaceJobPostingsSearch` returns 0 results — removed from the pipeline. Workload filter is not exposed in the UI. The `engagement` field on job nodes also returns `null` when `workload_eq` is active. Revisit if Upwork grants a higher API tier.
+- `budgetRange_eq` on `marketplaceJobPostingsSearch` is completely non-functional — confirmed by testing with `{ rangeStart: 100, rangeEnd: 200 }` which returned jobs with $3–$5 and $10–$20 rates. The filter is silently ignored regardless of values. Same for `hourlyRate_eq`. Budget filtering is done entirely client-side.
+- Hourly jobs have a rate range (min–max), not a single value. `hourlyBudgetMin` and `hourlyBudgetMax` are separate fields. Budget filter uses overlap logic: job is kept if its rate range intersects with the filter range.
+- If more than 10 matching jobs are posted between syncs, the extras are permanently missed (no historical fetch possible). Mitigation: sync every 1 minute via cron-job.org.
+- Upwork type-level GraphQL introspection is restricted — `__type(name: "...")` returns null for most types. Only `__schema { types { name } }` works to list type names.
+
+### Sync infrastructure
+
+- **Trigger**: cron-job.org, every 1 minute, calls `https://upwork-to-notion.vercel.app/api/sync` with `Authorization: Bearer <API_SECRET>` header
+- **GitHub Actions** (`sync.yml`): schedule disabled, `workflow_dispatch` kept for manual runs
+- **Vercel**: no cron configured (`vercel.json` has no `crons` key)
+- Sync takes ~4 seconds per run. 1-minute interval has ample headroom.
+- Overlapping syncs are safe — Notion upserts are idempotent (dedup by `External ID`)
 
 ### What's next (Phase 2)
 
 See `docs/phase2.md` for the full plan. Summary:
-- Multi-tenant SaaS: Supabase Auth, per-user tokens + settings, settings/dashboard UI
-- More frequent cron (every 3h) — requires Vercel Pro plan upgrade
+- Multi-tenant SaaS: per-user fan-out sync via Upstash QStash, `/api/cron` endpoint enqueues one job per active user
 - Freelancer profile snapshot (JSS, total earnings, top-rated) → Notion
 - Notifications when new matching jobs appear
 
