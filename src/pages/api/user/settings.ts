@@ -14,7 +14,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (req.method === "GET") {
     const { data, error } = await db
       .from("user_settings")
-      .select("notion_token, job_feed_db_id, filters_db_id, diary_db_id, upwork_person_id, upwork_name, upwork_client_id, upwork_client_secret, last_sync_at, prev_sync_at, last_sync_result, total_jobs_created, web_filter")
+      .select("notion_token, job_feed_db_id, diary_db_id, upwork_person_id, upwork_name, upwork_client_id, upwork_client_secret, last_sync_at, prev_sync_at, last_sync_result, total_jobs_created, web_filter")
       .eq("user_id", user.id)
       .maybeSingle();
     if (error) return res.status(500).json({ ok: false, error: error.message });
@@ -22,14 +22,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   if (req.method === "PATCH") {
-    const { notion_token, job_feed_db_id, filters_db_id, diary_db_id, upwork_person_id, upwork_client_id, upwork_client_secret, web_filter } = req.body ?? {};
+    const { notion_token, job_feed_db_id, diary_db_id, upwork_person_id, upwork_client_id, upwork_client_secret, web_filter } = req.body ?? {};
     const { error } = await db.from("user_settings").upsert(
       {
         user_id: user.id,
         ...(notion_token !== undefined && { notion_token }),
         ...(job_feed_db_id !== undefined && { job_feed_db_id }),
-        ...(filters_db_id !== undefined && { filters_db_id }),
-        ...(diary_db_id !== undefined && { diary_db_id }),
+...(diary_db_id !== undefined && { diary_db_id }),
         ...(upwork_person_id !== undefined && { upwork_person_id }),
         ...(upwork_client_id !== undefined && { upwork_client_id }),
         ...(upwork_client_secret !== undefined && { upwork_client_secret }),

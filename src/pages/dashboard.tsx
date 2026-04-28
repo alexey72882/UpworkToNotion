@@ -8,7 +8,6 @@ type SyncResult = { fetched: number; created: number; updated: number; skipped: 
 type Settings = {
   notion_token?: string;
   job_feed_db_id?: string;
-  filters_db_id?: string;
   diary_db_id?: string;
   upwork_person_id?: string;
   upwork_name?: string;
