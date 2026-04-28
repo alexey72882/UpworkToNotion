@@ -24,6 +24,9 @@ type Ok = {
 
 type Err = { ok: false; error: string };
 
+const PROPOSALS_INTERVAL_MS = 60 * 60 * 1000;   // 1 hour
+const DIARY_INTERVAL_MS    = 10 * 60 * 1000;   // 10 minutes
+
 type UserSettings = {
   user_id: string;
   notion_token: string;
@@ -33,6 +36,9 @@ type UserSettings = {
   upwork_name: string | null;
   total_jobs_created: number | null;
   web_filter: unknown | null;
+  last_proposals_sync_at: string | null;
+  last_diary_sync_at: string | null;
+  last_sync_at: string | null;
 };
 
 async function syncUser(settings: UserSettings) {
@@ -61,11 +67,19 @@ async function syncUser(settings: UserSettings) {
     }
   }
 
+  const now = Date.now();
+  const shouldFetchProposals = !settings.last_proposals_sync_at ||
+    now - new Date(settings.last_proposals_sync_at).getTime() >= PROPOSALS_INTERVAL_MS;
+  const shouldFetchDiary = !settings.last_diary_sync_at ||
+    now - new Date(settings.last_diary_sync_at).getTime() >= DIARY_INTERVAL_MS;
+
+  logger.info({ shouldFetchProposals, shouldFetchDiary }, "sync track decisions");
+
   const { rangeStart, rangeEnd } = getCurrentWeekRange();
   const [proposals, jobItems, contractItems] = await Promise.all([
-    fetchUpworkItems(token),
+    shouldFetchProposals ? fetchUpworkItems(token) : Promise.resolve([]),
     fetchJobFeed(webFilterToJobFilters(settings.web_filter as never), token),
-    settings.diary_db_id && settings.upwork_person_id
+    shouldFetchDiary && settings.diary_db_id && settings.upwork_person_id
       ? fetchContractDays(rangeStart, rangeEnd, token, settings.upwork_person_id)
       : Promise.resolve([]),
   ]);
@@ -111,6 +125,8 @@ async function syncUser(settings: UserSettings) {
   return {
     jobs: { fetched: jobItems.length, created: jobCreated, updated: jobUpdated, skipped: jobSkipped },
     contracts: { fetched: contractItems.length, created: contractCreated, updated: contractUpdated, skipped: contractSkipped },
+    proposalsSynced: shouldFetchProposals,
+    diarySynced: shouldFetchDiary,
   };
 }
 
@@ -157,6 +173,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
         continue;
       }
 
+      let proposalsSynced = false;
+      let diarySynced = false;
       try {
         const result = await syncUser(settings);
         if (result) {
@@ -168,19 +186,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
           totals.contracts.created += result.contracts.created;
           totals.contracts.updated += result.contracts.updated;
           totals.contracts.skipped += result.contracts.skipped;
+          proposalsSynced = result.proposalsSynced;
+          diarySynced = result.diarySynced;
         }
       } catch (err) {
         logger.error({ userId, err }, "user sync failed, skipping");
       }
 
-      // Update last_sync_at and increment cumulative counter
+      const now = new Date().toISOString();
       await getSupabase()
         .from("user_settings")
         .update({
-          last_sync_at: new Date().toISOString(),
+          prev_sync_at: settings.last_sync_at,
+          last_sync_at: now,
           last_sync_result: totals,
           total_jobs_created: (settings.total_jobs_created ?? 0) + totals.jobs.created,
-          updated_at: new Date().toISOString(),
+          updated_at: now,
+          ...(proposalsSynced && { last_proposals_sync_at: now }),
+          ...(diarySynced && { last_diary_sync_at: now }),
         })
         .eq("user_id", userId);
     }

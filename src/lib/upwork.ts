@@ -370,7 +370,7 @@ function mapJobFeedNode(node: any): JobFeedResult {
     value,
     rateMin: hourlyMin > 0 ? hourlyMin : undefined,
     rateMax: hourlyMax > 0 ? hourlyMax : undefined,
-    url: node.id ? `https://www.upwork.com/jobs/${node.id}` : undefined,
+    url: node.ciphertext ? `https://www.upwork.com/jobs/${node.ciphertext}` : undefined,
     created: node.publishedDateTime ?? undefined,
     jobType,
     experienceLevel: EXP_LEVEL_MAP[node.experienceLevel] ?? undefined,
@@ -403,6 +403,7 @@ export async function fetchJobFeed(filters: JobFilter[], accessToken?: string): 
     edges {
       node {
         id
+        ciphertext
         title
         description
         amount { rawValue currency }

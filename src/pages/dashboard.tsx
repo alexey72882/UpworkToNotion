@@ -14,6 +14,7 @@ type Settings = {
   upwork_name?: string;
   total_jobs_created?: number;
   last_sync_at?: string;
+  prev_sync_at?: string;
   last_sync_result?: { jobs: SyncResult; contracts: SyncResult };
 };
 
@@ -59,9 +60,17 @@ export default function Dashboard() {
       if (!user) router.replace("/auth/signin");
     });
 
+    let lastSyncAt: string | undefined;
     const fetchSettings = () =>
       fetch("/api/user/settings").then((r) => r.json()).then((d) => {
-        if (d.ok) setSettings(d.settings ?? {});
+        if (!d.ok) return;
+        const s = d.settings ?? {};
+        setSettings(s);
+        if (lastSyncAt && s.last_sync_at && s.last_sync_at !== lastSyncAt) {
+          const time = new Date(s.last_sync_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+          showToast(`Synced at ${time}`, "success");
+        }
+        lastSyncAt = s.last_sync_at;
       });
 
     fetchSettings();
@@ -154,7 +163,7 @@ export default function Dashboard() {
                 </svg>
               </div>
               <div className="stat-title">Update frequency</div>
-              <div className="stat-value">1<span className="text-lg font-normal text-base-content/50 ml-1">min</span></div>
+              <div className="stat-value">{settings?.last_sync_at && settings?.prev_sync_at ? Math.round((new Date(settings.last_sync_at).getTime() - new Date(settings.prev_sync_at).getTime()) / 1000) : "—"}<span className="text-lg font-normal text-base-content/50 ml-1">s</span></div>
               <div className="stat-desc">
                 {settings?.last_sync_at ? `Last sync ${timeAgo(settings.last_sync_at)}` : "Never synced"}
               </div>
