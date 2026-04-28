@@ -119,7 +119,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <div className="drawer-side is-drawer-close:overflow-visible z-40">
         <label htmlFor="app-drawer" aria-label="close sidebar" className="drawer-overlay" />
         <div
-          className="flex min-h-full flex-col items-start is-drawer-close:w-14 is-drawer-open:w-52 bg-[#2F4F82]"
+          className="flex min-h-full flex-col items-start is-drawer-close:w-14 is-drawer-open:w-52"
+          style={{ background: "linear-gradient(to bottom, #312E81, #0F0E1A)" }}
         >
           <ul className="menu w-full grow px-1 py-4">
             {NAV.map((item) => {

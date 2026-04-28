@@ -123,27 +123,33 @@ export default function Dashboard() {
     <AppLayout>
       <h2 className="text-2xl font-semibold text-base-content mb-6">{greeting(settings?.upwork_name)}</h2>
 
-      {/* Setup card — shown when not fully connected */}
+      {/* Banner — shown when not fully connected */}
       {!allConnected && (
-        <div className="flex justify-center mt-6">
-          <div className="card w-96 bg-base-100 card-lg shadow-sm">
-            <div className="card-body">
-              <h2 className="card-title">Connect your accounts to get started</h2>
-              <p className="text-sm text-base-content/70">
-                Set up your integrations before syncing Upwork data to Notion.
+        <div className="w-full rounded-[17px] overflow-hidden bg-white shadow-md flex flex-col lg:flex-row lg:min-h-[303px]">
+          {/* Image */}
+          <div className="relative min-h-[200px] lg:flex-1 order-first lg:order-last">
+            <img
+              src="/figma/dashboard-banner-616c12.png"
+              alt=""
+              className="absolute inset-0 w-full h-full object-cover object-left pointer-events-none select-none"
+            />
+          </div>
+          <div className="border-t border-base-300 lg:hidden" />
+          {/* Text */}
+          <div className="flex flex-col gap-6 p-8 lg:p-12 lg:w-[54%] lg:justify-center">
+            <div className="flex flex-col gap-4">
+              <h2 className="text-3xl font-semibold text-black leading-tight">Your Upwork, inside Notion.</h2>
+              <p className="text-lg text-[#737373] leading-[1.4]">
+                Sync job feed, your active contracts — then let Notion AI agents do the follow-up work for you.
               </p>
-              <ul className="text-sm text-base-content/70 list-none mt-1 space-y-0.5">
-                {!upworkOk && <li>1. Connect Upwork</li>}
-                {!notionOk && <li>{!upworkOk ? "2" : "1"}. Connect Notion</li>}
-              </ul>
-              <div className="justify-end card-actions mt-2">
-                <Link href="/settings" className="btn btn-primary btn-sm">
-                  Go to integrations
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                  </svg>
-                </Link>
-              </div>
+            </div>
+            <div>
+              <Link href="/settings" className="btn btn-primary btn-sm">
+                Set up integrations
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+              </Link>
             </div>
           </div>
         </div>
