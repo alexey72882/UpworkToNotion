@@ -102,7 +102,7 @@ Use this for all UI components: @docs/llms.txt
 
 ### OAuth token storage
 
-Upwork OAuth tokens are stored as a **singleton row** (`id = "singleton"`) in the Supabase `upwork_tokens` table. `getValidAccessToken()` transparently refreshes when expiry is within 2 minutes.
+Upwork OAuth tokens are stored **per user** in the Supabase `upwork_tokens` table, keyed by `user_id`. `getValidAccessToken()` transparently refreshes when expiry is within 2 minutes.
 
 ### Notion upsert
 
@@ -279,7 +279,7 @@ Every PR body must include a spec link matching `specs/[0-9]{4}-` — the `spec-
 
 The product spec lives in `specs/specs/0001-upwork-notion-v0.1.md`. The sync pipeline is fully wired up and working end-to-end.
 
-## Current status (as of 2026-04-27)
+## Current status (as of 2026-04-28)
 
 ### What's done
 
@@ -300,6 +300,26 @@ The product spec lives in `specs/specs/0001-upwork-notion-v0.1.md`. The sync pip
 - Hourly job rates stored as separate `Rate Min` and `Rate Max` Number fields in Notion Job Feed DB. `Value` field is fixed-price jobs only.
 - Budget filter uses range overlap: keep hourly jobs where `rateMax >= filter.minBudget` AND `rateMin <= filter.maxBudget`. For fixed jobs, filter against `value` directly.
 - Dashboard auto-refreshes settings every 15 seconds; last sync counter ticks in real time (seconds).
+- API throttling: proposals fetched once per hour, work diary once per 10 minutes (timestamps stored in `last_proposals_sync_at`, `last_diary_sync_at` in `user_settings`). Required `NOTIFY pgrst, 'reload schema'` in Supabase after ALTER TABLE.
+- `prev_sync_at` stored in `user_settings` to compute actual sync interval (shown in seconds on dashboard).
+- Dashboard shows "Synced at HH:MM" toast after each cron-triggered sync (detected via polling `last_sync_at`).
+- Upwork job URLs fixed: use `ciphertext` field from GraphQL (e.g. `~022048894189896190929`), NOT numeric `id`. Numeric IDs return 404.
+- Singleton token fallback removed from `getValidAccessToken` (security fix). Tokens are strictly per-user row.
+- Cron interval changed to 2 minutes at cron-job.org to prevent overlapping syncs causing duplicate Notion pages.
+- `filters_db_id` column dropped from Supabase `user_settings` table and removed from all code — was never read by the sync pipeline (filters DB comes from env var `NOTION_JOB_FILTERS_DATABASE_ID`).
+
+### Web UI (as of 2026-04-28)
+
+- **Settings page** (`/settings`): full-width `tabs tabs-box` daisyUI component. Two tabs: Upwork and Notion.
+  - Upwork connected state: inline SVG logo + "Connected" badge + green circle reconnect button (tooltip: "Reconnect Upwork API"). Plain inputs, full-width `btn-soft btn-primary` Save button.
+  - Upwork not-connected state: daisyUI `alert alert-vertical sm:alert-horizontal` instructions box, plain inputs, single "Save & Connect" button that saves credentials then immediately redirects to `/api/upwork/auth`.
+  - Notion tab: same pattern. Notion logo from Figma (node 129:8161). Fields: Integration token, Job Feed DB ID, Work Diary DB ID (filters DB ID removed).
+  - Both tabs: skeleton loading state while settings fetch.
+- **Profile page** (`/profile`): Personal info (first name saved to `user_metadata`, read-only email), Change password, Danger zone with delete account modal. Delete uses `DELETE /api/user/delete` (service role admin delete). Full-width card layout matching settings page.
+- **Dashboard** (`/dashboard`): Non-connected state replaced with full-width banner from Figma (node 140:8343). Background image (`/figma/dashboard-banner-616c12.png`) on the right. Stacks vertically on small screens (image on top, divider, text below). Shadow + rounded-[17px].
+- **Sidebar**: gradient `linear-gradient(to bottom, #312E81, #0F0E1A)` replacing flat `#2F4F82`.
+- **Figma assets**: downloaded to `public/figma/` — `upwork-logo.svg`, `notion-logo.svg`, `dashboard-banner-616c12.png`. Upwork and Notion logos are inline SVG components in `settings.tsx`.
+- **Filters page**: "Verified Payment only" toggle uses daisyUI toggle with checkmark (enabled) / X (disabled) SVG icons.
 
 ### Notion Job Feed DB — updated schema
 
@@ -353,12 +373,13 @@ The product spec lives in `specs/specs/0001-upwork-notion-v0.1.md`. The sync pip
 - Sync takes ~4 seconds per run. 1-minute interval has ample headroom.
 - Overlapping syncs are safe — Notion upserts are idempotent (dedup by `External ID`)
 
-### What's next (Phase 2)
+### What's next (Phase 3)
 
-See `docs/phase2.md` for the full plan. Summary:
-- Multi-tenant SaaS: per-user fan-out sync via Upstash QStash, `/api/cron` endpoint enqueues one job per active user
-- Freelancer profile snapshot (JSS, total earnings, top-rated) → Notion
-- Notifications when new matching jobs appear
+See `docs/progress.md` for the full roadmap. Summary:
+- Auto-create Notion databases (remove manual setup)
+- Onboarding flow for new users
+- Email notifications when new matching jobs appear
+- Freelancer profile snapshot (JSS, earnings, top-rated) → Notion
 
 
 ## Coding standards

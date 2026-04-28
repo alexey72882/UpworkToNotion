@@ -167,7 +167,7 @@ export default function SettingsPage() {
             checked={tab === "upwork"}
             onChange={() => setTab("upwork")}
           />
-          <div className="tab-content bg-base-100 border-base-300 p-6 overflow-hidden">
+          <div className="tab-content bg-base-100 border-base-300 p-6">
             {upworkConnected ? (
               <>
                 {/* Header — connected */}
@@ -255,7 +255,7 @@ export default function SettingsPage() {
             checked={tab === "notion"}
             onChange={() => setTab("notion")}
           />
-          <div className="tab-content bg-base-100 border-base-300 p-6 overflow-hidden">
+          <div className="tab-content bg-base-100 border-base-300 p-6">
             {notionConnected ? (
               <>
                 {/* Header — connected */}
