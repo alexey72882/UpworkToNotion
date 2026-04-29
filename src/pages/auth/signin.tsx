@@ -29,8 +29,7 @@ export default function SignIn() {
     <div className="min-h-screen flex items-center justify-center bg-base-300">
       <div className="w-full max-w-lg bg-base-100 rounded-2xl shadow p-6 flex flex-col gap-6">
 
-        {/* Logo */}
-        <Logo size={60} />
+        <div className="self-center"><Logo size={60} /></div>
 
         {/* Heading */}
         <h1 className="text-4xl font-extrabold text-center text-base-content leading-tight">
