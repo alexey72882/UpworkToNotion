@@ -26,13 +26,19 @@
   flex-shrink: 0;
 }
 
+.steps-row { gap: 8px; }
+
+@media (min-width: 768px) and (max-width: 1499px) {
+  .steps-row { gap: 16px; }
+}
+
 @media (max-width: 767px) {
-  .steps-row { gap: 24px; }
+  .steps-row { gap: 32px; }
 }
 
 @media (max-width: 1023px) {
   .hero-heading {
-    font-size: clamp(56px, 10vw, 80px) !important;
+    font-size: clamp(36px, 10vw, 80px) !important;
   }
   .hero-text-content {
     padding-left: 24px;

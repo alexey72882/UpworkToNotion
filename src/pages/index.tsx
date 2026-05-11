@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { useState } from "react";
 import Logo from "@/components/Logo";
 
 const PINK = "#FF3096";
@@ -17,6 +18,7 @@ const steps = [
 ];
 
 export default function Landing() {
+  const [menuOpen, setMenuOpen] = useState(false);
   return (
     <div style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
 
@@ -29,32 +31,33 @@ export default function Landing() {
               UpworkToNotion
             </span>
           </div>
-          <div className="flex items-center gap-6">
-            <Link
-              href="/auth/signin"
-              style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 500, fontSize: 16, color: TEXT_MUTED, opacity: 0.8 }}
-            >
+          {/* Desktop nav */}
+          <div className="hidden sm:flex items-center gap-6">
+            <Link href="/auth/signin" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 500, fontSize: 16, color: TEXT_MUTED, opacity: 0.8 }}>
               Sign In
             </Link>
-            <Link
-              href="/auth/signup"
-              style={{
-                fontFamily: "'Roboto', sans-serif",
-                fontWeight: 500,
-                fontSize: 16,
-                color: "white",
-                background: PINK,
-                border: `1px solid #EC4899`,
-                borderRadius: 8,
-                padding: "6px 16px",
-                letterSpacing: "0.04em",
-                display: "inline-block",
-              }}
-            >
+            <Link href="/auth/signup" className="cta-btn" style={{ fontFamily: "'Roboto', sans-serif", fontWeight: 500, fontSize: 16, color: "white", background: PINK, border: `1px solid #EC4899`, borderRadius: 8, padding: "6px 16px", letterSpacing: "0.04em", display: "inline-block", boxShadow: "none" }}>
               Start for Free
             </Link>
           </div>
+          {/* Mobile hamburger */}
+          <button className="sm:hidden flex flex-col gap-1.5 p-2" onClick={() => setMenuOpen(o => !o)} aria-label="Menu">
+            <span style={{ display: "block", width: 24, height: 2, background: NAVY, borderRadius: 2 }} />
+            <span style={{ display: "block", width: 24, height: 2, background: NAVY, borderRadius: 2 }} />
+            <span style={{ display: "block", width: 24, height: 2, background: NAVY, borderRadius: 2 }} />
+          </button>
         </div>
+        {/* Mobile dropdown */}
+        {menuOpen && (
+          <div className="sm:hidden flex flex-col gap-4 px-6 pb-5 pt-2">
+            <Link href="/auth/signin" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 500, fontSize: 16, color: TEXT_MUTED, textAlign: "center" }} onClick={() => setMenuOpen(false)}>
+              Sign In
+            </Link>
+            <Link href="/auth/signup" className="cta-btn" style={{ fontFamily: "'Roboto', sans-serif", fontWeight: 700, fontSize: 16, color: "white", background: PINK, border: `1px solid #EC4899`, borderRadius: 8, padding: "10px 16px", letterSpacing: "0.04em", display: "inline-block", textAlign: "center", boxShadow: "none" }} onClick={() => setMenuOpen(false)}>
+              Start for Free
+            </Link>
+          </div>
+        )}
       </nav>
 
       {/* Hero */}
@@ -138,7 +141,7 @@ export default function Landing() {
           {/* button: 32px below description (Figma Frame 12) */}
           <Link
             href="/auth/signup"
-            className="cta-btn"
+            className="cta-btn w-full sm:w-auto sm:self-center lg:self-start"
             style={{
               fontFamily: "'Roboto', sans-serif",
               fontWeight: 700,
@@ -149,9 +152,8 @@ export default function Landing() {
               borderRadius: 8,
               padding: "14px 16px",
               letterSpacing: "0.04em",
-              display: "inline-block",
-              width: 180,
               textAlign: "center",
+              display: "block",
               marginTop: 32,
             }}
           >
@@ -230,13 +232,13 @@ export default function Landing() {
           </div>
 
           {/* Step cards row — badges sit above cards; connectors align with badge centers */}
-          <div className="steps-row flex flex-col md:flex-row items-stretch justify-center w-full" style={{ gap: 8, paddingTop: 32 }}>
+          <div className="steps-row flex flex-col md:flex-row items-stretch justify-center w-full" style={{ paddingTop: 32 }}>
             {steps.map((step, i) => (
               <div key={step.num} style={{ display: "contents" }}>
                 {/* Card column */}
                 {/* Desktop card (hidden on mobile) */}
                 <div className="hidden md:flex" style={{ flex: 1, minWidth: 0, flexDirection: "column", alignItems: "center" }}>
-                  <div style={{ width: 60, height: 60, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 800, fontSize: 24, background: step.active ? PINK : "white", color: step.active ? "white" : TEXT_DARK, boxShadow: step.active ? "0px 8px 20px rgba(255,48,150,0.4)" : "0px 0px 0px 6px rgba(76,97,140,0.06), 0px 0px 10px rgba(76,97,140,0.2)", border: step.active ? "none" : "1.5px solid rgba(76,97,140,0.18)", position: "relative", zIndex: 2 }}>
+                  <div style={{ width: 60, height: 60, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 800, fontSize: 24, background: step.active ? PINK : "white", color: step.active ? "white" : TEXT_DARK, boxShadow: step.active ? "0px 8px 20px rgba(255,48,150,0.4)" : "0px 0px 10.8px 0px rgba(76,97,140,0.3)", border: "none", position: "relative", zIndex: 2 }}>
                     {step.num}
                   </div>
                   <div style={{ flex: 1, marginTop: -30, width: "100%", background: "white", borderRadius: 16, paddingTop: 40, paddingBottom: 24, paddingLeft: 16, paddingRight: 16, boxShadow: "0px 0px 6px rgba(76,97,140,0.2)", display: "flex", flexDirection: "column", gap: 10, alignItems: "center" }}>
@@ -248,7 +250,7 @@ export default function Landing() {
 
                 {/* Mobile card (hidden on desktop) */}
                 <div className="flex md:hidden w-full items-center">
-                  <div style={{ width: 60, height: 60, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 800, fontSize: 24, background: step.active ? PINK : "white", color: step.active ? "white" : TEXT_DARK, boxShadow: step.active ? "0px 8px 20px rgba(255,48,150,0.4)" : "0px 0px 0px 6px rgba(76,97,140,0.06), 0px 0px 10px rgba(76,97,140,0.2)", border: step.active ? "none" : "1.5px solid rgba(76,97,140,0.18)", position: "relative", zIndex: 2, marginRight: -30, flexShrink: 0 }}>
+                  <div style={{ width: 60, height: 60, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 800, fontSize: 24, background: step.active ? PINK : "white", color: step.active ? "white" : TEXT_DARK, boxShadow: step.active ? "0px 8px 20px rgba(255,48,150,0.4)" : "0px 0px 10.8px 0px rgba(76,97,140,0.3)", border: "none", position: "relative", zIndex: 2, marginRight: -30 }}>
                     {step.num}
                   </div>
                   <div style={{ flex: 1, background: "white", borderRadius: 16, paddingTop: 16, paddingBottom: 16, paddingLeft: 46, paddingRight: 16, boxShadow: "0px 0px 6px rgba(76,97,140,0.2)", display: "flex", flexDirection: "column", gap: 10 }}>
@@ -294,8 +296,8 @@ export default function Landing() {
             </div>
             <Link
               href="/auth/signup"
-              className="cta-btn"
-              style={{ fontFamily: "'Roboto', sans-serif", fontWeight: 700, fontSize: 18, color: "white", background: PINK, border: `1px solid #EC4899`, borderRadius: 8, padding: "14px 20px", letterSpacing: "0.04em", whiteSpace: "nowrap" as const, display: "inline-block" }}
+              className="cta-btn sm:w-auto w-full"
+              style={{ fontFamily: "'Roboto', sans-serif", fontWeight: 700, fontSize: 18, color: "white", background: PINK, border: `1px solid #EC4899`, borderRadius: 8, padding: "14px 20px", letterSpacing: "0.04em", whiteSpace: "nowrap" as const, display: "block", textAlign: "center" }}
             >
               Create free account →
             </Link>
@@ -363,7 +365,7 @@ export default function Landing() {
             </p>
             <Link
               href="/auth/signup"
-              className="cta-btn"
+              className="cta-btn sm:w-auto w-full"
               style={{
                 fontFamily: "'Roboto', sans-serif",
                 fontWeight: 700,
@@ -374,8 +376,7 @@ export default function Landing() {
                 borderRadius: 8,
                 padding: "14px 16px",
                 letterSpacing: "0.04em",
-                display: "inline-block",
-                width: 180,
+                display: "block",
                 textAlign: "center",
               }}
             >
@@ -388,9 +389,10 @@ export default function Landing() {
       {/* Footer */}
       <footer
         className="flex items-center justify-center"
-        style={{ background: DARK_FOOTER, height: 85 }}
+        style={{ background: DARK_FOOTER, minHeight: 85, paddingTop: 20, paddingBottom: 20 }}
       >
         <span
+          className="flex flex-col sm:flex-row sm:items-center gap-0 sm:gap-2 text-center"
           style={{
             fontFamily: "'Plus Jakarta Sans', sans-serif",
             fontWeight: 300,
@@ -398,8 +400,8 @@ export default function Landing() {
             color: "white",
           }}
         >
-          🍌&nbsp;&nbsp;
-          <span style={{ color: "#A9B4CB" }}>Big Banana Software. All rights reserved. © 2026</span>
+          <span>🍌&nbsp;&nbsp;Big Banana Software.</span>
+          <span style={{ color: "#A9B4CB" }}>All rights reserved. © 2026</span>
         </span>
       </footer>
     </div>
