@@ -143,17 +143,13 @@ function buildJobFeedProps(item: JobFeedItem): Record<string, any> {
 }
 
 async function findPageByExternalId(notion: Client, dbId: string, externalId: string, propName = "External ID"): Promise<string | null> {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const resp: any = await notion.request({
-      path: `databases/${dbId}/query`,
-      method: "post",
-      body: { filter: { property: propName, rich_text: { equals: externalId } } },
-    });
-    if (resp?.results?.length) return resp.results[0].id as string;
-  } catch {
-    // fall through — will create
-  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const resp: any = await notion.request({
+    path: `databases/${dbId}/query`,
+    method: "post",
+    body: { filter: { property: propName, rich_text: { equals: externalId } } },
+  });
+  if (resp?.results?.length) return resp.results[0].id as string;
   return null;
 }
 

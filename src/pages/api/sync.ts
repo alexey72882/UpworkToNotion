@@ -35,6 +35,7 @@ type UserSettings = {
   upwork_person_id: string | null;
   upwork_name: string | null;
   total_jobs_created: number | null;
+  total_diary_synced: number | null;
   web_filter: unknown | null;
   last_proposals_sync_at: string | null;
   last_diary_sync_at: string | null;
@@ -79,8 +80,8 @@ async function syncUser(settings: UserSettings) {
   const [proposals, jobItems, contractItems] = await Promise.all([
     shouldFetchProposals ? fetchUpworkItems(token) : Promise.resolve([]),
     fetchJobFeed(webFilterToJobFilters(settings.web_filter as never), token),
-    shouldFetchDiary && settings.diary_db_id && settings.upwork_person_id
-      ? fetchContractDays(rangeStart, rangeEnd, token, settings.upwork_person_id)
+    shouldFetchDiary && settings.diary_db_id
+      ? fetchContractDays(rangeStart, rangeEnd, token, settings.upwork_person_id ?? undefined)
       : Promise.resolve([]),
   ]);
 
@@ -173,24 +174,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
         continue;
       }
 
-      let proposalsSynced = false;
-      let diarySynced = false;
+      let result: Awaited<ReturnType<typeof syncUser>> = null;
       try {
-        const result = await syncUser(settings);
-        if (result) {
-          totals.jobs.fetched += result.jobs.fetched;
-          totals.jobs.created += result.jobs.created;
-          totals.jobs.updated += result.jobs.updated;
-          totals.jobs.skipped += result.jobs.skipped;
-          totals.contracts.fetched += result.contracts.fetched;
-          totals.contracts.created += result.contracts.created;
-          totals.contracts.updated += result.contracts.updated;
-          totals.contracts.skipped += result.contracts.skipped;
-          proposalsSynced = result.proposalsSynced;
-          diarySynced = result.diarySynced;
-        }
+        result = await syncUser(settings);
       } catch (err) {
         logger.error({ userId, err }, "user sync failed, skipping");
+      }
+
+      if (result) {
+        totals.jobs.fetched += result.jobs.fetched;
+        totals.jobs.created += result.jobs.created;
+        totals.jobs.updated += result.jobs.updated;
+        totals.jobs.skipped += result.jobs.skipped;
+        totals.contracts.fetched += result.contracts.fetched;
+        totals.contracts.created += result.contracts.created;
+        totals.contracts.updated += result.contracts.updated;
+        totals.contracts.skipped += result.contracts.skipped;
       }
 
       const now = new Date().toISOString();
@@ -199,11 +198,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
         .update({
           prev_sync_at: settings.last_sync_at,
           last_sync_at: now,
-          last_sync_result: totals,
-          total_jobs_created: (settings.total_jobs_created ?? 0) + totals.jobs.created,
+          last_sync_result: result ? { jobs: result.jobs, contracts: result.contracts } : null,
+          total_jobs_created: (settings.total_jobs_created ?? 0) + (result?.jobs.created ?? 0),
+          total_diary_synced: (settings.total_diary_synced ?? 0) + (result?.contracts.fetched ?? 0),
           updated_at: now,
-          ...(proposalsSynced && { last_proposals_sync_at: now }),
-          ...(diarySynced && { last_diary_sync_at: now }),
+          ...(result?.proposalsSynced && { last_proposals_sync_at: now }),
+          ...(result?.diarySynced && { last_diary_sync_at: now }),
         })
         .eq("user_id", userId);
     }

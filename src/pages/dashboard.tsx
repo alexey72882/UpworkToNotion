@@ -12,6 +12,7 @@ type Settings = {
   upwork_person_id?: string;
   upwork_name?: string;
   total_jobs_created?: number;
+  total_diary_synced?: number;
   last_sync_at?: string;
   prev_sync_at?: string;
   last_sync_result?: { jobs: SyncResult; contracts: SyncResult };
@@ -196,9 +197,9 @@ export default function Dashboard() {
                 </svg>
               </div>
               <div className="stat-title">Diary updates</div>
-              <div className="stat-value">{lastResult?.contracts.fetched ?? "—"}</div>
+              <div className="stat-value">{settings?.total_diary_synced ?? "—"}</div>
               <div className="stat-desc">
-                {lastResult ? `+${lastResult.contracts.created} new during last sync` : "No data yet"}
+                {lastResult ? `+${lastResult.contracts.fetched} during last sync` : "No data yet"}
               </div>
             </div>
           </div>

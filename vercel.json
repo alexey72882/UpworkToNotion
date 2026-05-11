@@ -1,5 +1,6 @@
 {
   "functions": {
+    "src/pages/api/sync.ts": { "maxDuration": 60 },
     "src/pages/api/contracts-history.ts": { "maxDuration": 60 }
   }
 }
