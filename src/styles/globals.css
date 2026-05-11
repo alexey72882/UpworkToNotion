@@ -2,3 +2,77 @@
 @plugin "daisyui" {
   themes: light --default;
 }
+
+@keyframes orbPulse {
+  0%, 100% { transform: scale(1);    opacity: 0.9; }
+  50%       { transform: scale(1.18); opacity: 0.7; }
+}
+
+.orb-pink {
+  animation: orbPulse 11s ease-in-out infinite;
+}
+
+.orb-blue {
+  animation: orbPulse 14s ease-in-out infinite;
+  animation-delay: -5s;
+}
+
+.hero-text-content {
+  min-height: 647px;
+  padding-top: 60px;
+  padding-bottom: 60px;
+  padding-left: max(24px, calc(50% - 640px));
+  width: calc(max(24px, calc(50% - 640px)) + 538px);
+  flex-shrink: 0;
+}
+
+@media (max-width: 767px) {
+  .steps-row { gap: 24px; }
+}
+
+@media (max-width: 1023px) {
+  .hero-heading {
+    font-size: clamp(56px, 10vw, 80px) !important;
+  }
+  .hero-text-content {
+    padding-left: 24px;
+    padding-right: 24px;
+    width: 100%;
+    flex-shrink: 1;
+    align-items: center;
+    text-align: center;
+  }
+  .hero-inner {
+    align-self: stretch;
+  }
+}
+
+@keyframes gradientShift {
+  0%   { background-position: 200% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.cta-btn {
+  box-shadow: 0px 12px 27.7px 0px rgba(255,48,150,0.4), inset 0px 1px 0px 0px rgba(255,110,181,1);
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+  cursor: pointer;
+}
+.cta-btn:hover {
+  background: #E8007A !important;
+  border-color: #D6006A !important;
+  box-shadow: 0px 6px 18px 0px rgba(255,48,150,0.35), inset 0px 1px 0px 0px rgba(255,110,181,0.7);
+}
+.cta-btn:focus-visible {
+  outline: 2px solid #FF3096;
+  outline-offset: 3px;
+  background: #E8007A !important;
+}
+
+.gradient-text-animated {
+  background: linear-gradient(90deg, #FF3096, #25A3FF, #FF3096);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: gradientShift 4s linear infinite;
+}
