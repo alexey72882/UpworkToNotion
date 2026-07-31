@@ -100,11 +100,13 @@ async function syncUser(settings: UserSettings, force?: string) {
   }
 
   let jobCreated = 0, jobUpdated = 0, jobSkipped = 0;
+  const recentJobs: { title: string; action: "created" | "updated" }[] = [];
   const notionOpts = settings.job_feed_db_id ? { notion, dbId: settings.job_feed_db_id } : undefined;
   for (const item of jobItems) {
     try {
       const result = await upsertJobFeedItem(item, notionOpts);
       if (result === "created") jobCreated++; else jobUpdated++;
+      recentJobs.push({ title: item.title, action: result });
     } catch (err) {
       jobSkipped++;
       logger.warn({ externalId: item.externalId, err }, "job upsert failed, skipping");
@@ -126,7 +128,7 @@ async function syncUser(settings: UserSettings, force?: string) {
   }
 
   return {
-    jobs: { fetched: jobItems.length, created: jobCreated, updated: jobUpdated, skipped: jobSkipped },
+    jobs: { fetched: jobItems.length, created: jobCreated, updated: jobUpdated, skipped: jobSkipped, recentJobs },
     contracts: { fetched: contractItems.length, created: contractCreated, updated: contractUpdated, skipped: contractSkipped },
     proposalsSynced: shouldFetchProposals,
     diarySynced: shouldFetchDiary,

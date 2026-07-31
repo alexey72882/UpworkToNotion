@@ -4,7 +4,8 @@ import Link from "next/link";
 import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
 import AppLayout from "@/components/AppLayout";
 
-type SyncResult = { fetched: number; created: number; updated: number; skipped: number };
+type RecentJob = { title: string; action: "created" | "updated" };
+type SyncResult = { fetched: number; created: number; updated: number; skipped: number; recentJobs?: RecentJob[] };
 type Settings = {
   notion_token?: string;
   job_feed_db_id?: string;
@@ -211,6 +212,37 @@ export default function Dashboard() {
               {syncing ? "Syncing…" : "Sync now"}
             </button>
           </div>
+
+          {/* Recent jobs table */}
+          {lastResult?.jobs?.recentJobs && lastResult.jobs.recentJobs.length > 0 && (
+            <div className="bg-base-100 shadow-sm rounded-box overflow-hidden">
+              <div className="px-4 py-3 border-b border-base-200">
+                <span className="font-medium text-sm">Last sync — {lastResult.jobs.fetched} jobs</span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="table table-sm">
+                  <thead>
+                    <tr>
+                      <th>Title</th>
+                      <th className="w-24">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lastResult.jobs.recentJobs.map((job, i) => (
+                      <tr key={i}>
+                        <td className="max-w-xs truncate">{job.title}</td>
+                        <td>
+                          <span className={`badge badge-sm ${job.action === "created" ? "badge-success badge-soft" : "badge-ghost"}`}>
+                            {job.action === "created" ? "new" : "updated"}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
       {/* Toast notification */}
