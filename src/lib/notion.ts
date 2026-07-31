@@ -195,17 +195,60 @@ function buildContractDayProps(item: ContractDayItem): Record<string, any> {
   return props;
 }
 
-export async function upsertContractDayItem(item: ContractDayItem, opts?: { notion?: Client; dbId?: string }): Promise<"created" | "updated"> {
+// Bulk-fetch all diary pages for a date range and return a map of externalId → pageId.
+// Use this before upserting to avoid per-item Notion queries, which have eventual-consistency
+// lag that causes duplicate rows when two sync runs happen within minutes of each other.
+export async function fetchDiaryPageMap(
+  fromDate: string,
+  toDate: string,
+  opts?: { notion?: Client; dbId?: string }
+): Promise<Map<string, string>> {
+  const notion = opts?.notion ?? getNotion();
+  const dbId = opts?.dbId ?? getDbId("NOTION_DIARY_DATABASE_ID");
+  const map = new Map<string, string>();
+  let cursor: string | undefined;
+  do {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const resp: any = await notion.request({
+      path: `databases/${dbId}/query`,
+      method: "post",
+      body: {
+        filter: {
+          and: [
+            { property: "Date", date: { on_or_after: fromDate } },
+            { property: "Date", date: { on_or_before: toDate } },
+          ],
+        },
+        page_size: 100,
+        ...(cursor ? { start_cursor: cursor } : {}),
+      },
+    });
+    for (const page of resp?.results ?? []) {
+      const id: string = page.properties?.ID?.rich_text?.[0]?.plain_text;
+      if (id) map.set(id, page.id);
+    }
+    cursor = resp?.has_more ? resp.next_cursor : undefined;
+  } while (cursor);
+  return map;
+}
+
+export async function upsertContractDayItem(
+  item: ContractDayItem,
+  opts?: { notion?: Client; dbId?: string; pageMap?: Map<string, string> }
+): Promise<"created" | "updated"> {
   const notion = opts?.notion ?? getNotion();
   const dbId = opts?.dbId ?? getDbId("NOTION_DIARY_DATABASE_ID");
   const props = buildContractDayProps(item);
 
-  const existingId = await findPageByExternalId(notion, dbId, item.externalId, "ID");
+  const existingId = opts?.pageMap?.get(item.externalId)
+    ?? await findPageByExternalId(notion, dbId, item.externalId, "ID");
   if (existingId) {
     await notion.pages.update({ page_id: existingId, properties: props as any });
     return "updated";
   }
   await notion.pages.create({ parent: { database_id: dbId }, properties: props as any });
+  // Add to map so subsequent items in same run don't re-create
+  opts?.pageMap?.set(item.externalId, "pending");
   return "created";
 }
 

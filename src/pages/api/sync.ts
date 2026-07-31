@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { upsertJobFeedItem, upsertContractDayItem, getNotionForUser } from "@/lib/notion";
+import { upsertJobFeedItem, upsertContractDayItem, fetchDiaryPageMap, getNotionForUser } from "@/lib/notion";
 import { fetchUpworkItems, fetchJobFeed, fetchContractDays, getCurrentWeekRange } from "@/lib/upwork";
 import { webFilterToJobFilters } from "@/lib/webFilter";
 import { getValidAccessToken } from "@/lib/upworkToken";
@@ -112,14 +112,16 @@ async function syncUser(settings: UserSettings, force?: string) {
   }
 
   let contractCreated = 0, contractUpdated = 0, contractSkipped = 0;
-  const diaryOpts = settings.diary_db_id ? { notion, dbId: settings.diary_db_id } : undefined;
-  for (const item of contractItems) {
-    try {
-      const result = await upsertContractDayItem(item, diaryOpts);
-      if (result === "created") contractCreated++; else contractUpdated++;
-    } catch (err) {
-      contractSkipped++;
-      logger.warn({ externalId: item.externalId, err }, "contract upsert failed, skipping");
+  if (contractItems.length > 0 && settings.diary_db_id) {
+    const pageMap = await fetchDiaryPageMap(rangeStart, rangeEnd, { notion, dbId: settings.diary_db_id });
+    for (const item of contractItems) {
+      try {
+        const result = await upsertContractDayItem(item, { notion, dbId: settings.diary_db_id, pageMap });
+        if (result === "created") contractCreated++; else contractUpdated++;
+      } catch (err) {
+        contractSkipped++;
+        logger.warn({ externalId: item.externalId, err }, "contract upsert failed, skipping");
+      }
     }
   }
 

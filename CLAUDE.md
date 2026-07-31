@@ -352,6 +352,12 @@ Each session gets a unique `externalId` of the form `contract-<id>-<yyyyMMdd>-<H
 
 **User ID**: `540749103839944704` (Alexey, stored as `UPWORK_PERSON_ID`)
 
+### Work diary dedup — bulk page map
+
+**Bug (discovered 2026-07-30):** The original upsert queried Notion once per diary item using a rich-text filter (`databases/query`). Notion's query endpoint has eventual-consistency lag — a page just created may not appear in filter results for several minutes. When two sync runs happened close together, run 2 couldn't find pages run 1 had just created, and inserted duplicates. This compounded over multiple runs, producing dozens of copies of the same session row (observed: 104 rows for 5 distinct IDs on 2026-07-25).
+
+**Fix:** `fetchDiaryPageMap(fromDate, toDate)` in `notion.ts` bulk-fetches all existing diary pages for the week in one paginated query before any upserts begin, building a `Map<externalId, pageId>` in memory. `upsertContractDayItem` accepts this map via `opts.pageMap` and does a local lookup instead of a Notion query. Newly created pages are added to the map immediately so subsequent items in the same run can't re-create them. The per-item `findPageByExternalId` is kept as a fallback when no map is provided.
+
 ### Known quirks
 
 - `vendorProposals` pagination limit is 40 (`first: 41+` returns VJCA-6 error)
