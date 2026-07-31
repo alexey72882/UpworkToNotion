@@ -75,7 +75,7 @@ npm run test:watch # run Vitest in watch mode
 ```
 
 ## daisyUI reference
-Use this for all UI components: @docs/llms.txt
+For UI work, add `@docs/llms.txt` to the chat manually — it's the full daisyUI 5 component reference.
 
 ## Architecture
 
