@@ -193,6 +193,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
         totals.contracts.skipped += result.contracts.skipped;
       }
 
+      const userDurationMs = Date.now() - start;
+      await getSupabase().from("sync_logs").insert({
+        user_id: userId,
+        jobs_fetched: result?.jobs.fetched ?? 0,
+        jobs_created: result?.jobs.created ?? 0,
+        jobs_updated: result?.jobs.updated ?? 0,
+        jobs_skipped: result?.jobs.skipped ?? 0,
+        contracts_fetched: result?.contracts.fetched ?? 0,
+        contracts_created: result?.contracts.created ?? 0,
+        contracts_updated: result?.contracts.updated ?? 0,
+        contracts_skipped: result?.contracts.skipped ?? 0,
+        proposals_synced: result?.proposalsSynced ?? false,
+        diary_synced: result?.diarySynced ?? false,
+        duration_ms: userDurationMs,
+        error: result === null ? "no_token" : null,
+      });
+
       const now = new Date().toISOString();
       await getSupabase()
         .from("user_settings")
