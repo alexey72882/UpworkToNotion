@@ -172,21 +172,23 @@ export async function upsertJobFeedItem(item: JobFeedItem, opts?: { notion?: Cli
 // ---------------------------------------------------------------------------
 
 export type ContractDayItem = {
-  externalId: string;    // "contract-41815410-20260406"
+  externalId: string;    // "contract-41815410-20260406-0900"
   weekName: string;      // "Week 15"
   contractName: string;
   date: string;          // "2026-04-06"
   rate?: number;
   minutes: number;       // integer: cells * 10
+  startTime?: string;    // ISO datetime
+  endTime?: string;      // ISO datetime
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function buildContractDayProps(item: ContractDayItem): Record<string, any> {
   const props: Record<string, any> = {
-    Name: { title: [{ text: { content: item.weekName } }] },
+    Name: { title: [{ text: { content: item.contractName } }] },
     ID: { rich_text: [{ text: { content: item.externalId } }] },
-    "Contract name": { rich_text: [{ text: { content: item.contractName } }] },
-    Date: { date: { start: item.date } },
+    "Week number": { rich_text: [{ text: { content: item.weekName } }] },
+    Date: { date: { start: item.startTime ?? item.date, end: item.endTime ?? null } },
     Minutes: { number: item.minutes },
   };
   if (item.rate !== undefined) props.Rate = { number: item.rate };

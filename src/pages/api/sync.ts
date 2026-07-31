@@ -42,7 +42,7 @@ type UserSettings = {
   last_sync_at: string | null;
 };
 
-async function syncUser(settings: UserSettings) {
+async function syncUser(settings: UserSettings, force?: string) {
   const notion = getNotionForUser(settings.notion_token);
   const token = await getValidAccessToken(settings.user_id);
   if (!token) {
@@ -69,9 +69,9 @@ async function syncUser(settings: UserSettings) {
   }
 
   const now = Date.now();
-  const shouldFetchProposals = !settings.last_proposals_sync_at ||
+  const shouldFetchProposals = force === "proposals" || !settings.last_proposals_sync_at ||
     now - new Date(settings.last_proposals_sync_at).getTime() >= PROPOSALS_INTERVAL_MS;
-  const shouldFetchDiary = !settings.last_diary_sync_at ||
+  const shouldFetchDiary = force === "diary" || !settings.last_diary_sync_at ||
     now - new Date(settings.last_diary_sync_at).getTime() >= DIARY_INTERVAL_MS;
 
   logger.info({ shouldFetchProposals, shouldFetchDiary }, "sync track decisions");
@@ -137,6 +137,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     return res.status(405).json({ ok: false, error: "Method Not Allowed" });
   }
 
+  const force = typeof req.query.force === "string" ? req.query.force : undefined;
   const start = Date.now();
   logger.info("sync started");
 
@@ -176,7 +177,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
       let result: Awaited<ReturnType<typeof syncUser>> = null;
       try {
-        result = await syncUser(settings);
+        result = await syncUser(settings, force);
       } catch (err) {
         logger.error({ userId, err }, "user sync failed, skipping");
       }

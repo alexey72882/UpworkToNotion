@@ -465,12 +465,14 @@ export async function fetchJobFeed(filters: JobFilter[], accessToken?: string): 
 // ---------------------------------------------------------------------------
 
 export type UpworkContractDay = {
-  externalId: string;    // "contract-41815410-20260406"
+  externalId: string;    // "contract-41815410-20260406-0900"
   weekName: string;      // "Week 15"
   contractName: string;
   date: string;          // "2026-04-06"
   rate?: number;
   minutes: number;       // integer: cells * 10
+  startTime?: string;    // ISO datetime of session start
+  endTime?: string;      // ISO datetime of session end (last cell + 10 min)
 };
 
 export function getCurrentWeekRange(): { rangeStart: string; rangeEnd: string } {
@@ -482,7 +484,29 @@ export function getCurrentWeekRange(): { rangeStart: string; rangeEnd: string } 
   return { rangeStart: fmt(monday), rangeEnd: fmt(now) };
 }
 
+function groupCellsIntoSessions(timestamps: number[]): Array<{ start: number; end: number; count: number }> {
+  if (timestamps.length === 0) return [];
+  const sessions: Array<{ start: number; end: number; count: number }> = [];
+  let sessionStart = timestamps[0];
+  let prev = timestamps[0];
+  let count = 1;
+  for (let i = 1; i < timestamps.length; i++) {
+    if (timestamps[i] - prev <= 600_000) {
+      prev = timestamps[i];
+      count++;
+    } else {
+      sessions.push({ start: sessionStart, end: prev + 600_000, count });
+      sessionStart = timestamps[i];
+      prev = timestamps[i];
+      count = 1;
+    }
+  }
+  sessions.push({ start: sessionStart, end: prev + 600_000, count });
+  return sessions;
+}
+
 function yyyymmddToIso(d: string): string {
+
   return `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`;
 }
 
@@ -552,7 +576,7 @@ export async function fetchContractDays(fromDate: string, toDate: string, access
   if (pairs.length === 0) return [];
 
   // Step 3: Batch diary queries in groups of DIARY_BATCH_SIZE
-  const cellCounts: Record<string, number> = {};
+  const cellTimestamps: Record<string, number[]> = {};
   for (let i = 0; i < pairs.length; i += DIARY_BATCH_SIZE) {
     const batch = pairs.slice(i, i + DIARY_BATCH_SIZE);
     const diaryQuery = `{
@@ -564,8 +588,13 @@ export async function fetchContractDays(fromDate: string, toDate: string, access
       const diaryJson = await gqlFetch(token, diaryQuery);
       if (diaryJson?.errors) logger.warn({ errors: diaryJson.errors }, "diary batch had GraphQL errors");
       for (const { contractId, date } of batch) {
-        const cells = diaryJson?.data?.[`d${contractId}_${date}`]?.workDiaryTimeCells ?? [];
-        cellCounts[`${contractId}-${date}`] = cells.length;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const cells: any[] = diaryJson?.data?.[`d${contractId}_${date}`]?.workDiaryTimeCells ?? [];
+        const timestamps = cells
+          .map((c) => Number(c?.cellDateTime?.rawValue) * 1000)
+          .filter((t) => !isNaN(t))
+          .sort((a, b) => a - b);
+        cellTimestamps[`${contractId}-${date}`] = timestamps;
       }
     } catch (err) {
       logger.error({ batchIndex: i, err }, "diary batch failed, skipping");
@@ -573,21 +602,31 @@ export async function fetchContractDays(fromDate: string, toDate: string, access
     logger.info({ batch: Math.floor(i / DIARY_BATCH_SIZE) + 1, total: Math.ceil(pairs.length / DIARY_BATCH_SIZE) }, "diary batch done");
   }
 
-  // Build results
+  // Build results — split each contract-day into sessions (gap > 10 min = new session)
   const results: UpworkContractDay[] = [];
   for (const c of contracts) {
-    const days: string[] = workDaysJson?.data?.[`c${c.id}`]?.workDays ?? [];
+    const days: string[] = (workDaysJson?.data?.[`c${c.id}`]?.workDays ?? [])
+      .filter((d: string) => d >= fromDate && d <= toDate);
     for (const day of days) {
-      const cells = cellCounts[`${c.id}-${day}`] ?? 0;
+      const timestamps = cellTimestamps[`${c.id}-${day}`] ?? [];
       const isoDate = yyyymmddToIso(day);
-      results.push({
-        externalId: `contract-${c.id}-${day}`,
-        weekName: `Week ${getISOWeek(isoDate)}`,
-        contractName: c.title,
-        date: isoDate,
-        rate: c.rate,
-        minutes: cells * 10,
-      });
+      const sessions = groupCellsIntoSessions(timestamps);
+      if (sessions.length === 0) continue;
+      for (const session of sessions) {
+        const startIso = new Date(session.start).toISOString();
+        const endIso = new Date(session.end).toISOString();
+        const HHmm = startIso.slice(11, 16).replace(":", "");
+        results.push({
+          externalId: `contract-${c.id}-${day}-${HHmm}`,
+          weekName: `Week ${getISOWeek(isoDate)}`,
+          contractName: c.title,
+          date: isoDate,
+          rate: c.rate,
+          minutes: session.count * 10,
+          startTime: startIso,
+          endTime: endIso,
+        });
+      }
     }
   }
 

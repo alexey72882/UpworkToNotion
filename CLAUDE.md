@@ -158,14 +158,14 @@ Each row is a saved search. App reads this to know what to fetch from Upwork.
 
 #### 3. Work Diary (`NOTION_DIARY_DATABASE_ID`)
 
-One row per contract per work day. App writes here.
+One row per work session per contract. App writes here.
 
 | Property | Type | Notes |
 |----------|------|-------|
-| `Name` | Title | Week label (e.g. `Week 15`) |
-| `ID` | Rich text | `contract-<id>-<yyyyMMdd>` — dedup key |
-| `Contract name` | Rich text | Contract title from Upwork |
-| `Date` | Date | Work day (ISO format) |
+| `Name` | Title | Contract title from Upwork |
+| `ID` | Rich text | `contract-<id>-<yyyyMMdd>-<HHmm>` — dedup key (start time UTC) |
+| `Week number` | Rich text | Week label (e.g. `Week 15`) |
+| `Date` | Date | Session start → end (ISO datetime range) |
 | `Minutes` | Number | Tracked minutes (cells × 10) |
 | `Rate` | Number | Hourly rate (USD), if applicable |
 
@@ -288,7 +288,7 @@ The product spec lives in `specs/specs/0001-upwork-notion-v0.1.md`. The sync pip
 - Sync pipeline: three parallel tracks per cron run:
   1. **Proposals** (`fetchUpworkItems`): fetches pending/active/hired proposals, used for cross-referencing job feed items with submitted proposals
   2. **Job feed** (`fetchJobFeed`): reads active filters from Notion filters DB, runs one query per filter, deduplicates by job ID, writes to job feed Notion DB. 10 jobs per filter query (no pagination on this endpoint). Annotates jobs with proposal URL when already applied.
-  3. **Work diary** (`fetchContractDays`): 3-step approach — writes one row per contract per day to `NOTION_DIARY_DATABASE_ID`
+  3. **Work diary** (`fetchContractDays`): 3-step approach — writes one row per work session (consecutive 10-min cells, gap > 10 min = new session) to `NOTION_DIARY_DATABASE_ID`
 - `contractList` / `vendorContracts` permanently blocked (Upwork partner API scope). Workaround: use `talentWorkHistory` for active contract IDs.
 - **3 Notion databases** wired up (env vars set locally + Vercel):
   - `NOTION_JOB_FEED_DATABASE_ID` — filtered job results (output)
@@ -344,7 +344,11 @@ The product spec lives in `specs/specs/0001-upwork-notion-v0.1.md`. The sync pip
 `fetchContractDays()` in `src/lib/upwork.ts`:
 1. `talentWorkHistory(filter: { personId: $UPWORK_PERSON_ID, status: [ACTIVE] })` → active contract IDs + titles + rates
 2. Batched `workDays` queries → days with tracked activity this week (Mon–Sun UTC, yyyyMMdd format)
-3. Batched `workDiaryContract` queries (up to 10 per request) → count `workDiaryTimeCells` (each = 10 min) → stored as `minutes`
+3. Batched `workDiaryContract` queries (up to 10 per request) → fetch `workDiaryTimeCells` with `cellDateTime.rawValue` timestamps → group into sessions (gap > 10 min = new session) → one Notion row per session with start/end datetime and `minutes = cell_count * 10`
+
+Each session gets a unique `externalId` of the form `contract-<id>-<yyyyMMdd>-<HHmm>` (start time in UTC). The Notion `Date` field stores the session as a date range (`start` → `end`).
+
+`/api/sync` accepts an optional `?force=diary` or `?force=proposals` query param to bypass the throttle interval and force-fetch that track immediately.
 
 **User ID**: `540749103839944704` (Alexey, stored as `UPWORK_PERSON_ID`)
 
