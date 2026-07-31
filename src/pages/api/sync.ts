@@ -178,9 +178,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       }
 
       let result: Awaited<ReturnType<typeof syncUser>> = null;
+      let syncError: string | null = null;
       try {
         result = await syncUser(settings, force);
       } catch (err) {
+        syncError = err instanceof Error ? err.message : String(err);
         logger.error({ userId, err }, "user sync failed, skipping");
       }
 
@@ -209,7 +211,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
         proposals_synced: result?.proposalsSynced ?? false,
         diary_synced: result?.diarySynced ?? false,
         duration_ms: userDurationMs,
-        error: result === null ? "no_token" : null,
+        error: syncError ?? (result === null ? "no_token" : null),
       });
 
       const now = new Date().toISOString();
