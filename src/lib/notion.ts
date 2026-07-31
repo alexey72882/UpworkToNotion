@@ -153,17 +153,52 @@ async function findPageByExternalId(notion: Client, dbId: string, externalId: st
   return null;
 }
 
-export async function upsertJobFeedItem(item: JobFeedItem, opts?: { notion?: Client; dbId?: string }): Promise<"created" | "updated"> {
+// Bulk-fetch job feed pages created in the last 24h to avoid per-item query lag.
+// Same pattern as fetchDiaryPageMap — prevents duplicates from concurrent syncs.
+export async function fetchJobFeedPageMap(
+  opts?: { notion?: Client; dbId?: string }
+): Promise<Map<string, string>> {
+  const notion = opts?.notion ?? getNotion();
+  const dbId = opts?.dbId ?? getDbId("NOTION_JOB_FEED_DATABASE_ID");
+  const map = new Map<string, string>();
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  let cursor: string | undefined;
+  do {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const resp: any = await notion.request({
+      path: `databases/${dbId}/query`,
+      method: "post",
+      body: {
+        filter: { property: "Created", date: { on_or_after: since } },
+        page_size: 100,
+        ...(cursor ? { start_cursor: cursor } : {}),
+      },
+    });
+    for (const page of resp?.results ?? []) {
+      const id: string = page.properties?.["External ID"]?.rich_text?.[0]?.plain_text;
+      if (id) map.set(id, page.id);
+    }
+    cursor = resp?.has_more ? resp.next_cursor : undefined;
+  } while (cursor);
+  return map;
+}
+
+export async function upsertJobFeedItem(
+  item: JobFeedItem,
+  opts?: { notion?: Client; dbId?: string; pageMap?: Map<string, string> }
+): Promise<"created" | "updated"> {
   const notion = opts?.notion ?? getNotion();
   const dbId = opts?.dbId ?? getDbId("NOTION_JOB_FEED_DATABASE_ID");
   const props = buildJobFeedProps(item);
 
-  const existingId = await findPageByExternalId(notion, dbId, item.externalId);
+  const existingId = opts?.pageMap?.get(item.externalId)
+    ?? await findPageByExternalId(notion, dbId, item.externalId);
   if (existingId) {
     await notion.pages.update({ page_id: existingId, properties: props as any });
     return "updated";
   }
   await notion.pages.create({ parent: { database_id: dbId }, properties: props as any });
+  opts?.pageMap?.set(item.externalId, "pending");
   return "created";
 }
 

@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { upsertJobFeedItem, upsertContractDayItem, fetchDiaryPageMap, getNotionForUser } from "@/lib/notion";
+import { upsertJobFeedItem, upsertContractDayItem, fetchJobFeedPageMap, fetchDiaryPageMap, getNotionForUser } from "@/lib/notion";
 import { fetchUpworkItems, fetchJobFeed, fetchContractDays, getCurrentWeekRange } from "@/lib/upwork";
 import { webFilterToJobFilters } from "@/lib/webFilter";
 import { getValidAccessToken } from "@/lib/upworkToken";
@@ -101,15 +101,17 @@ async function syncUser(settings: UserSettings, force?: string) {
 
   let jobCreated = 0, jobUpdated = 0, jobSkipped = 0;
   const recentJobs: { title: string; action: "created" | "updated" }[] = [];
-  const notionOpts = settings.job_feed_db_id ? { notion, dbId: settings.job_feed_db_id } : undefined;
-  for (const item of jobItems) {
-    try {
-      const result = await upsertJobFeedItem(item, notionOpts);
-      if (result === "created") jobCreated++; else jobUpdated++;
-      recentJobs.push({ title: item.title, action: result });
-    } catch (err) {
-      jobSkipped++;
-      logger.warn({ externalId: item.externalId, err }, "job upsert failed, skipping");
+  if (jobItems.length > 0 && settings.job_feed_db_id) {
+    const jobPageMap = await fetchJobFeedPageMap({ notion, dbId: settings.job_feed_db_id });
+    for (const item of jobItems) {
+      try {
+        const result = await upsertJobFeedItem(item, { notion, dbId: settings.job_feed_db_id, pageMap: jobPageMap });
+        if (result === "created") jobCreated++; else jobUpdated++;
+        recentJobs.push({ title: item.title, action: result });
+      } catch (err) {
+        jobSkipped++;
+        logger.warn({ externalId: item.externalId, err }, "job upsert failed, skipping");
+      }
     }
   }
 
