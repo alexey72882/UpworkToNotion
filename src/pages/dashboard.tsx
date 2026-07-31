@@ -38,7 +38,6 @@ function activeFilterTags(f?: WebFilter): string[] {
   if (!f) return [];
   const tags: string[] = [];
   if (f.skillExpression) tags.push(f.skillExpression);
-  if (f.category) tags.push(f.category);
   (f.subcategoryIds ?? []).forEach(s => tags.push(s));
   (f.jobType ?? []).forEach(t => tags.push(t));
   (f.experienceLevel ?? []).forEach(e => tags.push(e));
