@@ -6,6 +6,20 @@ import AppLayout from "@/components/AppLayout";
 
 type RecentJob = { title: string; action: "created" | "updated" };
 type SyncResult = { fetched: number; created: number; updated: number; skipped: number; recentJobs?: RecentJob[] };
+type WebFilter = {
+  skillExpression?: string;
+  category?: string;
+  subcategoryIds?: string[];
+  jobType?: string[];
+  minBudget?: string;
+  maxBudget?: string;
+  minFixedBudget?: string;
+  maxFixedBudget?: string;
+  experienceLevel?: string[];
+  duration?: string[];
+  clientHires?: string[];
+  verifiedPaymentOnly?: boolean;
+};
 type Settings = {
   notion_token?: string;
   job_feed_db_id?: string;
@@ -17,7 +31,23 @@ type Settings = {
   last_sync_at?: string;
   prev_sync_at?: string;
   last_sync_result?: { jobs: SyncResult; contracts: SyncResult };
+  web_filter?: WebFilter;
 };
+
+function activeFilterTags(f?: WebFilter): string[] {
+  if (!f) return [];
+  const tags: string[] = [];
+  if (f.skillExpression) tags.push(f.skillExpression);
+  if (f.category) tags.push(f.category);
+  (f.subcategoryIds ?? []).forEach(s => tags.push(s));
+  (f.jobType ?? []).forEach(t => tags.push(t));
+  (f.experienceLevel ?? []).forEach(e => tags.push(e));
+  (f.duration ?? []).forEach(d => tags.push(d));
+  if (f.minBudget) tags.push(`$${f.minBudget}+ budget`);
+  if (f.maxBudget) tags.push(`budget ≤$${f.maxBudget}`);
+  if (f.verifiedPaymentOnly) tags.push("Verified payment");
+  return tags;
+}
 
 function greeting(name?: string) {
   const hour = new Date().getHours();
@@ -212,6 +242,17 @@ export default function Dashboard() {
               {syncing ? "Syncing…" : "Sync now"}
             </button>
           </div>
+
+          {/* Active filters */}
+          {activeFilterTags(settings?.web_filter).length > 0 && (
+            <div className="bg-base-100 shadow-sm rounded-box px-4 py-3 flex flex-wrap gap-2 items-center">
+              <span className="text-sm font-medium text-base-content/60 mr-1">Filters:</span>
+              {activeFilterTags(settings?.web_filter).map((tag, i) => (
+                <span key={i} className="badge badge-soft badge-neutral badge-sm">{tag}</span>
+              ))}
+              <Link href="/filters" className="ml-auto text-xs text-primary hover:underline">Edit</Link>
+            </div>
+          )}
 
           {/* Recent jobs table */}
           {lastResult?.jobs?.recentJobs && lastResult.jobs.recentJobs.length > 0 && (
