@@ -28,6 +28,8 @@ function getDbId(envVar: string): string {
 export type JobFilter = {
   name: string;
   skillExpression?: string;
+  searchExpression?: string;     // composed from advanced search fields
+  titleExpression?: string;      // title-only search
   categoryIds?: string[];        // category labels — mapped to IDs in upwork.ts
   subcategoryIds?: string[];     // subcategory labels — mapped to IDs in upwork.ts
   jobType?: "Hourly" | "Fixed";

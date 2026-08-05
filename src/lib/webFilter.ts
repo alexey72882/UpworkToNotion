@@ -2,6 +2,11 @@ import type { JobFilter } from "@/lib/notion";
 
 export type WebFilter = {
   skillExpression: string;
+  allWords: string;
+  anyWords: string;
+  noneWords: string;
+  exactPhrase: string;
+  titleSearch: string;
   category: string;
   subcategoryIds: string[];
   jobType: string[];
@@ -15,11 +20,29 @@ export type WebFilter = {
   verifiedPaymentOnly: boolean;
 };
 
+function splitByComma(s: string): string[] {
+  return s.split(",").map(t => t.trim()).filter(Boolean);
+}
+
+function quoteIfNeeded(term: string): string {
+  return term.includes(" ") ? `"${term}"` : term;
+}
+
+function composeSearchExpression(wf: WebFilter): string | undefined {
+  const parts: string[] = [];
+  if (wf.allWords?.trim()) parts.push(splitByComma(wf.allWords).map(quoteIfNeeded).join(" "));
+  if (wf.anyWords?.trim()) parts.push(splitByComma(wf.anyWords).map(quoteIfNeeded).join(" OR "));
+  if (wf.noneWords?.trim()) parts.push(splitByComma(wf.noneWords).map(t => `-${quoteIfNeeded(t)}`).join(" "));
+  if (wf.exactPhrase?.trim()) parts.push(`"${wf.exactPhrase.trim()}"`);
+  return parts.length ? parts.join(" ") : undefined;
+}
+
 export function webFilterToJobFilters(wf: WebFilter | null | undefined): JobFilter[] {
   if (!wf) return [];
 
   const hasAny =
-    wf.skillExpression || wf.category || wf.subcategoryIds.length ||
+    wf.skillExpression || wf.allWords || wf.anyWords || wf.noneWords ||
+    wf.exactPhrase || wf.titleSearch || wf.category || wf.subcategoryIds.length ||
     wf.jobType.length || wf.minBudget || wf.maxBudget ||
     wf.minFixedBudget || wf.maxFixedBudget || wf.experienceLevel.length ||
     wf.duration.length || wf.clientHires.length ||
@@ -35,7 +58,9 @@ export function webFilterToJobFilters(wf: WebFilter | null | undefined): JobFilt
 
   return jobTypes.map(jobType => ({
     name: "Web Filter",
-    skillExpression: wf.skillExpression || undefined,
+    skillExpression: wf.skillExpression?.trim() ? splitByComma(wf.skillExpression).join(" ") : undefined,
+    searchExpression: composeSearchExpression(wf),
+    titleExpression: wf.titleSearch?.trim() || undefined,
     categoryIds: wf.category ? [wf.category] : undefined,
     subcategoryIds: wf.subcategoryIds.length ? wf.subcategoryIds : undefined,
     jobType,

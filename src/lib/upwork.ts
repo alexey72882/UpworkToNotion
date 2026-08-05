@@ -309,6 +309,8 @@ const SUBCATEGORY_ID_MAP: Record<string, string> = {
 function buildJobFilter(filter: JobFilter): string {
   const parts: string[] = [];
   if (filter.skillExpression) parts.push(`skillExpression_eq: ${JSON.stringify(filter.skillExpression)}`);
+  if (filter.searchExpression) parts.push(`searchExpression_eq: ${JSON.stringify(filter.searchExpression)}`);
+  if (filter.titleExpression) parts.push(`titleExpression_eq: ${JSON.stringify(filter.titleExpression)}`);
 
   const catIds = (filter.categoryIds ?? []).map(n => CATEGORY_ID_MAP[n]).filter(Boolean);
   if (catIds.length) parts.push(`categoryIds_any: [${catIds.join(", ")}]`);

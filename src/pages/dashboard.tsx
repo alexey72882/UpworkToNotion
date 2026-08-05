@@ -8,6 +8,11 @@ type RecentJob = { title: string; action: "created" | "updated" | "skipped" };
 type SyncResult = { fetched: number; created: number; updated: number; skipped: number; recentJobs?: RecentJob[]; error?: string | null };
 type WebFilter = {
   skillExpression?: string;
+  allWords?: string;
+  anyWords?: string;
+  noneWords?: string;
+  exactPhrase?: string;
+  titleSearch?: string;
   category?: string;
   subcategoryIds?: string[];
   jobType?: string[];
@@ -38,6 +43,11 @@ function activeFilterTags(f?: WebFilter): string[] {
   if (!f) return [];
   const tags: string[] = [];
   if (f.skillExpression) tags.push(f.skillExpression);
+  if (f.allWords) tags.push(f.allWords);
+  if (f.anyWords) tags.push(f.anyWords);
+  if (f.noneWords) tags.push(`-${f.noneWords}`);
+  if (f.exactPhrase) tags.push(`"${f.exactPhrase}"`);
+  if (f.titleSearch) tags.push(`title: ${f.titleSearch}`);
   (f.subcategoryIds ?? []).forEach(s => tags.push(s));
   (f.jobType ?? []).forEach(t => tags.push(t));
   (f.experienceLevel ?? []).forEach(e => tags.push(e));

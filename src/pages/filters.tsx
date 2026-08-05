@@ -90,6 +90,11 @@ const DURATIONS: { key: string; label: string }[] = [
 
 const EMPTY: WebFilter = {
   skillExpression: "",
+  allWords: "",
+  anyWords: "",
+  noneWords: "",
+  exactPhrase: "",
+  titleSearch: "",
   category: "",
   subcategoryIds: [],
   jobType: [],
@@ -104,7 +109,11 @@ const EMPTY: WebFilter = {
 };
 
 function hasChanges(f: WebFilter) {
-  return !!(f.skillExpression || f.category || f.subcategoryIds.length || f.jobType.length || f.minBudget || f.maxBudget || f.minFixedBudget || f.maxFixedBudget || f.experienceLevel.length || f.duration.length || f.clientHires.length || f.verifiedPaymentOnly);
+  return !!(f.skillExpression || f.allWords || f.anyWords || f.noneWords || f.exactPhrase || f.titleSearch || f.category || f.subcategoryIds.length || f.jobType.length || f.minBudget || f.maxBudget || f.minFixedBudget || f.maxFixedBudget || f.experienceLevel.length || f.duration.length || f.clientHires.length || f.verifiedPaymentOnly);
+}
+
+function hasAdvanced(f: WebFilter) {
+  return !!(f.allWords || f.anyWords || f.noneWords || f.exactPhrase || f.titleSearch);
 }
 
 export default function FiltersPage() {
@@ -116,6 +125,8 @@ export default function FiltersPage() {
   const [toast, setToast] = useState<{ message: string; type: "success" | "info" } | null>(null);
   const [toastVisible, setToastVisible] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [advancedDraft, setAdvancedDraft] = useState({ allWords: "", anyWords: "", noneWords: "", exactPhrase: "", titleSearch: "" });
+  const advancedModalRef = useRef<HTMLDialogElement>(null);
   const categoryDropdownRef = useRef<HTMLDetailsElement>(null);
 
   useEffect(() => {
@@ -215,6 +226,11 @@ export default function FiltersPage() {
       key: "skill",
       label: form.skillExpression,
       onRemove: () => { setForm(f => ({ ...f, skillExpression: "" })); setSaved(false); },
+    }] : []),
+    ...(hasAdvanced(form) ? [{
+      key: "advanced",
+      label: "Advanced search",
+      onRemove: () => { setForm(f => ({ ...f, allWords: "", anyWords: "", noneWords: "", exactPhrase: "", titleSearch: "" })); setSaved(false); },
     }] : []),
     ...form.subcategoryIds.map(key => ({
       key,
@@ -367,7 +383,14 @@ export default function FiltersPage() {
 
             {/* Keyword search */}
             <div className="flex items-center gap-4">
-              <span className="text-sm text-base-content w-36 shrink-0">Keyword search</span>
+              <div className="flex items-center gap-1.5 w-36 shrink-0">
+                <span className="text-sm text-base-content">Keyword search</span>
+                <div className="tooltip tooltip-right" data-tip={`Searches by skill tags attached to job postings. Separate terms with commas — all must match.\n\nExample: react, typescript, figma\n→ jobs tagged with all three.`}>
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="size-4 text-base-content/40 cursor-default">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-7-4a1 1 0 1 1-2 0 1 1 0 0 1 2 0ZM9 9a.75.75 0 0 0 0 1.5h.253a.25.25 0 0 1 .244.304l-.459 2.066A1.75 1.75 0 0 0 10.747 15H11a.75.75 0 0 0 0-1.5h-.253a.25.25 0 0 1-.244-.304l.459-2.066A1.75 1.75 0 0 0 9.253 9H9Z" clipRule="evenodd" />
+                  </svg>
+                </div>
+              </div>
               <input
                 type="text"
                 className="input input-bordered w-72 shrink-0"
@@ -375,7 +398,73 @@ export default function FiltersPage() {
                 value={form.skillExpression}
                 onChange={e => { setForm(f => ({ ...f, skillExpression: e.target.value })); setSaved(false); }}
               />
+              <button
+                type="button"
+                className="btn btn-outline btn-sm"
+                onClick={() => {
+                  setAdvancedDraft({ allWords: form.allWords, anyWords: form.anyWords, noneWords: form.noneWords, exactPhrase: form.exactPhrase, titleSearch: form.titleSearch });
+                  advancedModalRef.current?.showModal();
+                }}
+              >
+                Advanced search
+              </button>
             </div>
+
+            {/* Advanced search modal */}
+            <dialog ref={advancedModalRef} className="modal">
+              <div className="modal-box max-w-lg">
+                <button
+                  type="button"
+                  className="btn btn-sm btn-circle btn-ghost absolute right-4 top-4"
+                  onClick={() => advancedModalRef.current?.close()}
+                >✕</button>
+                <h3 className="font-bold text-lg mb-6">Advanced search</h3>
+                <div className="flex flex-col gap-4">
+                  {[
+                    { label: "All of these words", key: "allWords" as const, placeholder: "e.g. react, typescript", tip: `Separate terms with commas — all must appear in the job posting.\n\nExample: react, typescript\n→ jobs containing both react AND typescript.` },
+                    { label: "Any of these words", key: "anyWords" as const, placeholder: "e.g. framer, webflow, no-code", tip: `Separate terms with commas — at least one must match. Multi-word phrases are supported.\n\nExample: product designer, ux lead, head of design\n→ jobs mentioning any of these.` },
+                    { label: "None of these words", key: "noneWords" as const, placeholder: "e.g. wordpress, php", tip: `Separate terms with commas — jobs containing any of these will be deprioritised.\n\nExample: wordpress, php, woocommerce\n→ excludes jobs focused on those.` },
+                    { label: "The exact phrase", key: "exactPhrase" as const, placeholder: "e.g. ux designer", tip: `Matches the exact sequence of words as typed.\n\nExample: senior product designer\n→ only jobs with that exact phrase.` },
+                    { label: "Title search", key: "titleSearch" as const, placeholder: "e.g. lead designer", tip: `Searches only within the job title, not the description.\n\nExample: lead designer\n→ matches "Lead Designer at SaaS startup" but not a job description mentioning the role.` },
+                  ].map(({ label, key, placeholder, tip }) => (
+                    <div key={key} className="flex flex-col gap-1.5">
+                      <div className="flex items-center gap-1">
+                        <label className="text-sm text-base-content/70">{label}</label>
+                        <div className="tooltip tooltip-right" data-tip={tip}>
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="size-4 text-base-content/40 cursor-default">
+                            <path fillRule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-7-4a1 1 0 1 1-2 0 1 1 0 0 1 2 0ZM9 9a.75.75 0 0 0 0 1.5h.253a.25.25 0 0 1 .244.304l-.459 2.066A1.75 1.75 0 0 0 10.747 15H11a.75.75 0 0 0 0-1.5h-.253a.25.25 0 0 1-.244-.304l.459-2.066A1.75 1.75 0 0 0 9.253 9H9Z" clipRule="evenodd" />
+                          </svg>
+                        </div>
+                      </div>
+                      <input
+                        type="text"
+                        className="input input-bordered w-full"
+                        placeholder={placeholder}
+                        value={advancedDraft[key]}
+                        onChange={e => setAdvancedDraft(d => ({ ...d, [key]: e.target.value }))}
+                      />
+                    </div>
+                  ))}
+                </div>
+                <div className="modal-action mt-6">
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={() => advancedModalRef.current?.close()}
+                  >Cancel</button>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={() => {
+                      setForm(f => ({ ...f, ...advancedDraft }));
+                      setSaved(false);
+                      advancedModalRef.current?.close();
+                    }}
+                  >Search</button>
+                </div>
+              </div>
+              <form method="dialog" className="modal-backdrop"><button>close</button></form>
+            </dialog>
 
             <div className="divider my-0" />
 
