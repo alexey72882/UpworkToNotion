@@ -153,15 +153,15 @@ async function findPageByExternalId(notion: Client, dbId: string, externalId: st
   return null;
 }
 
-// Bulk-fetch job feed pages created in the last 24h to avoid per-item query lag.
-// Same pattern as fetchDiaryPageMap — prevents duplicates from concurrent syncs.
+// Bulk-fetch all job feed pages into a map of externalId → pageId.
+// Prevents duplicates from Notion eventual-consistency lag under concurrent syncs.
+// Fetches only External ID to keep payload small across potentially large DBs.
 export async function fetchJobFeedPageMap(
   opts?: { notion?: Client; dbId?: string }
 ): Promise<Map<string, string>> {
   const notion = opts?.notion ?? getNotion();
   const dbId = opts?.dbId ?? getDbId("NOTION_JOB_FEED_DATABASE_ID");
   const map = new Map<string, string>();
-  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   let cursor: string | undefined;
   do {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -169,7 +169,6 @@ export async function fetchJobFeedPageMap(
       path: `databases/${dbId}/query`,
       method: "post",
       body: {
-        filter: { property: "Created", date: { on_or_after: since } },
         page_size: 100,
         ...(cursor ? { start_cursor: cursor } : {}),
       },

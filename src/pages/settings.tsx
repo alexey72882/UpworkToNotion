@@ -3,7 +3,7 @@ import { useRouter } from "next/router";
 import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
 import AppLayout from "@/components/AppLayout";
 
-const CALLBACK_URL = "https://upwork-to-notion.vercel.app/api/upwork/callback";
+const CALLBACK_URL = process.env.NEXT_PUBLIC_UPWORK_REDIRECT_URI ?? "https://upwork-to-notion.vercel.app/api/upwork/callback";
 const UPWORK_INSTRUCTIONS_URL = "https://www.upwork.com/developer/keys/new";
 const NOTION_INSTRUCTIONS_URL = "https://www.notion.so/my-integrations";
 

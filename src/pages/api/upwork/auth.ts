@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 import { getSupabaseServer } from "@/lib/supabaseServer";
 import { getSupabase } from "@/lib/supabase";
 
-const REDIRECT_URI = "https://upwork-to-notion.vercel.app/api/upwork/callback";
+const REDIRECT_URI = process.env.UPWORK_REDIRECT_URI ?? "https://upwork-to-notion.vercel.app/api/upwork/callback";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const supabase = getSupabaseServer(req, res);

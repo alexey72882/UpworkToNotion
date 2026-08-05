@@ -139,7 +139,7 @@ export default async function handler(
 
     const client_id = settings?.upwork_client_id;
     const client_secret = settings?.upwork_client_secret;
-    const redirect_uri = "https://upwork-to-notion.vercel.app/api/upwork/callback";
+    const redirect_uri = process.env.UPWORK_REDIRECT_URI ?? "https://upwork-to-notion.vercel.app/api/upwork/callback";
 
     if (!client_id || !client_secret) {
       return res.status(400).json({ ok: false, error: "Upwork credentials not found. Save your Key and Secret in settings first." });

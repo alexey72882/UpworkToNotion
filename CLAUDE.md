@@ -131,30 +131,9 @@ Jobs fetched from Upwork marketplace matching your filters. App writes here.
 | `Upwork Link` | URL | Job posting URL |
 | `Created` | Date | Published date |
 
-#### 2. Job Feed Filters (`NOTION_JOB_FILTERS_DATABASE_ID`)
+#### 2. Job Feed Filters (`NOTION_JOB_FILTERS_DATABASE_ID`) — NO LONGER USED
 
-Each row is a saved search. App reads this to know what to fetch from Upwork.
-
-| Property | Type | Notes |
-|----------|------|-------|
-| `Name` | Title | Label for the filter (e.g. "Figma UI") |
-| `Active` | Checkbox | Uncheck to pause this filter |
-| `Skill Expression` | Rich text | Free-text skill query (e.g. `UX/UI`) |
-| `Category` | Multi-select | e.g. `Design & Creative`, `Web / Mobile & Software Dev` (12 options) |
-| `Subcategory` | Multi-select | e.g. `Design › Product Design` (70 options with category prefix) |
-| `Job Type` | Select | `Hourly` or `Fixed` |
-| `Min Budget` | Number | Min hourly rate or fixed price (USD) |
-| `Max Budget` | Number | Max hourly rate or fixed price (USD) |
-| `Experience Level` | Multi-select | `Expert`, `Intermediate`, `Entry` — only first value used |
-| `Verified Payment Only` | Checkbox | Only clients with verified payment method |
-| `Duration` | Multi-select | `Week`, `Month`, `Quarter`, `Semester`, `Ongoing` |
-| `Workload` | Select | `Full Time`, `Part Time`, `As Needed` |
-| `Days Posted` | Number | Max days since posting |
-| `Max Proposals` | Number | Upper bound on proposal count |
-| `Min Client Hires` | Number | Minimum prior hires by client |
-| `Min Client Rating` | Number | Minimum client feedback score |
-| `Previous Clients Only` | Checkbox | Only clients you've worked with before |
-| `Enterprise Only` | Checkbox | Enterprise clients only |
+**The sync no longer reads from this Notion DB.** Filters are stored in `user_settings.web_filter` (Supabase) and converted to `JobFilter[]` via `webFilterToJobFilters()` in `src/lib/webFilter.ts`. The `readJobFilters()` function in `notion.ts` is dead code. `NOTION_JOB_FILTERS_DATABASE_ID` env var is unused.
 
 #### 3. Work Diary (`NOTION_DIARY_DATABASE_ID`)
 
@@ -174,14 +153,12 @@ One row per work session per contract. App writes here.
 **.env.local:**
 ```
 NOTION_JOB_FEED_DATABASE_ID=<id>
-NOTION_JOB_FILTERS_DATABASE_ID=<id>
 NOTION_DIARY_DATABASE_ID=<id>
 ```
 
 **Vercel (production):**
 ```bash
 npx vercel env add NOTION_JOB_FEED_DATABASE_ID production
-npx vercel env add NOTION_JOB_FILTERS_DATABASE_ID production
 npx vercel env add NOTION_DIARY_DATABASE_ID production
 npx vercel --prod
 ```
@@ -199,7 +176,7 @@ npx vercel --prod
 |----------|---------|
 | `NOTION_TOKEN` | Notion client auth |
 | `NOTION_JOB_FEED_DATABASE_ID` | Job feed output DB |
-| `NOTION_JOB_FILTERS_DATABASE_ID` | Filter config DB (read by app) |
+| `NOTION_JOB_FILTERS_DATABASE_ID` | ~~Filter config DB~~ — no longer used (filters moved to `user_settings.web_filter` in Supabase) |
 | `NOTION_DIARY_DATABASE_ID` | Work diary output DB |
 | `SUPABASE_URL` | Supabase client |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase client |
@@ -279,7 +256,7 @@ Every PR body must include a spec link matching `specs/[0-9]{4}-` — the `spec-
 
 The product spec lives in `specs/specs/0001-upwork-notion-v0.1.md`. The sync pipeline is fully wired up and working end-to-end.
 
-## Current status (as of 2026-04-28)
+## Current status (as of 2026-07-31)
 
 ### What's done
 
@@ -287,12 +264,12 @@ The product spec lives in `specs/specs/0001-upwork-notion-v0.1.md`. The sync pip
 - Upwork GraphQL schema discovered via `/api/upwork/gql-introspect`
 - Sync pipeline: three parallel tracks per cron run:
   1. **Proposals** (`fetchUpworkItems`): fetches pending/active/hired proposals, used for cross-referencing job feed items with submitted proposals
-  2. **Job feed** (`fetchJobFeed`): reads active filters from Notion filters DB, runs one query per filter, deduplicates by job ID, writes to job feed Notion DB. 10 jobs per filter query (no pagination on this endpoint). Annotates jobs with proposal URL when already applied.
+  2. **Job feed** (`fetchJobFeed`): reads filters from `user_settings.web_filter` (Supabase) via `webFilterToJobFilters()`, runs one query per filter, deduplicates by job ID, writes to job feed Notion DB. 10 jobs per filter query (no pagination on this endpoint). Annotates jobs with proposal URL when already applied.
   3. **Work diary** (`fetchContractDays`): 3-step approach — writes one row per work session (consecutive 10-min cells, gap > 10 min = new session) to `NOTION_DIARY_DATABASE_ID`
 - `contractList` / `vendorContracts` permanently blocked (Upwork partner API scope). Workaround: use `talentWorkHistory` for active contract IDs.
 - **3 Notion databases** wired up (env vars set locally + Vercel):
   - `NOTION_JOB_FEED_DATABASE_ID` — filtered job results (output)
-  - `NOTION_JOB_FILTERS_DATABASE_ID` — saved searches (input, read by app)
+  - ~~`NOTION_JOB_FILTERS_DATABASE_ID`~~ — no longer used
   - `NOTION_DIARY_DATABASE_ID` — per-day work diary rows
 - Notion client pinned to API version `2022-06-28` (SDK default `2025-09-03` removed the `databases/query` endpoint)
 - Job feed filters: human-readable multi-select labels in Notion → numeric Upwork IDs via `CATEGORY_ID_MAP` / `SUBCATEGORY_ID_MAP` in `upwork.ts`. 12 filter fields supported (skill, category, subcategory, job type, budget, experience level, verified payment, duration, workload, proposals cap, client hires/rating, flags)
@@ -303,12 +280,13 @@ The product spec lives in `specs/specs/0001-upwork-notion-v0.1.md`. The sync pip
 - API throttling: proposals fetched once per hour, work diary once per 10 minutes (timestamps stored in `last_proposals_sync_at`, `last_diary_sync_at` in `user_settings`). Required `NOTIFY pgrst, 'reload schema'` in Supabase after ALTER TABLE.
 - `prev_sync_at` stored in `user_settings` to compute actual sync interval (shown in seconds on dashboard).
 - Dashboard shows "Synced at HH:MM" toast after each cron-triggered sync (detected via polling `last_sync_at`).
+- Dashboard shows active filter badges (from `web_filter` in `user_settings`) and a recent jobs table. The table lists all jobs fetched from Upwork (raw data), with badges showing what Notion did with each: `created`, `updated`, or `skipped` (upsert error). Stored in `last_sync_result.jobs.recentJobs`.
 - Upwork job URLs fixed: use `ciphertext` field from GraphQL (e.g. `~022048894189896190929`), NOT numeric `id`. Numeric IDs return 404.
 - Singleton token fallback removed from `getValidAccessToken` (security fix). Tokens are strictly per-user row.
 - Cron interval changed to 2 minutes at cron-job.org to prevent overlapping syncs causing duplicate Notion pages.
 - `filters_db_id` column dropped from Supabase `user_settings` table and removed from all code — was never read by the sync pipeline (filters DB comes from env var `NOTION_JOB_FILTERS_DATABASE_ID`).
 
-### Web UI (as of 2026-04-28)
+### Web UI (as of 2026-07-31)
 
 - **Settings page** (`/settings`): full-width `tabs tabs-box` daisyUI component. Two tabs: Upwork and Notion.
   - Upwork connected state: inline SVG logo + "Connected" badge + green circle reconnect button (tooltip: "Reconnect Upwork API"). Plain inputs, full-width `btn-soft btn-primary` Save button.
@@ -352,11 +330,41 @@ Each session gets a unique `externalId` of the form `contract-<id>-<yyyyMMdd>-<H
 
 **User ID**: `540749103839944704` (Alexey, stored as `UPWORK_PERSON_ID`)
 
-### Work diary dedup — bulk page map
+### Proposal submission — confirmed field values (2026-08-03)
 
-**Bug (discovered 2026-07-30):** The original upsert queried Notion once per diary item using a rich-text filter (`databases/query`). Notion's query endpoint has eventual-consistency lag — a page just created may not appear in filter results for several minutes. When two sync runs happened close together, run 2 couldn't find pages run 1 had just created, and inserted duplicates. This compounded over multiple runs, producing dozens of copies of the same session row (observed: 104 rows for 5 distinct IDs on 2026-07-25).
+`createJobProposal` mutation requires these exact values for Alexey's account:
 
-**Fix:** `fetchDiaryPageMap(fromDate, toDate)` in `notion.ts` bulk-fetches all existing diary pages for the week in one paginated query before any upserts begin, building a `Map<externalId, pageId>` in memory. `upsertContractDayItem` accepts this map via `opts.pageMap` and does a local lookup instead of a Notion query. Newly created pages are added to the map immediately so subsequent items in the same run can't re-create them. The per-item `findPageByExternalId` is kept as a fallback when no map is provided.
+```graphql
+mutation {
+  createJobProposal(input: {
+    selectedContractor: {
+      id: "540749103839944704"   # user.id (snowflake)
+      oDeskUserID: "alexkievua"  # user.nid (username) — NOT rid, NOT numeric id
+    }
+    jobReference: "<numeric_job_id>"  # node.id from marketplaceJobPostingsSearch — NOT ciphertext
+    chargedAmount: 50.0               # hourly rate or fixed bid
+    coverLetter: "..."
+    teamOrgId: "540749103848333313"   # organization.id from vendorProposals — NOT user.id
+  }) { newProposalId status error }
+}
+```
+
+Key gotchas confirmed by testing:
+- `oDeskUserID` = `nid` (username string `"alexkievua"`), NOT the numeric `rid` (`"6890346"`)
+- `teamOrgId` = org ID `540749103848333313` (fetched via `vendorProposals { organization { id } }`), NOT user ID
+- `jobReference` = numeric `id` from job search (e.g. `"2084364540816197571"`), NOT ciphertext (`~02...`)
+- Permissions include "Grants access to submit proposal to jobs" — write access is confirmed working
+
+### Dedup — bulk page map pattern
+
+Both the work diary and job feed use a bulk page map to prevent duplicate Notion pages caused by eventual-consistency lag.
+
+**Root cause:** Notion's `databases/query` endpoint has eventual-consistency lag — a page just created may not appear in filter results for several minutes. When two sync runs happened close together, run 2 couldn't find pages run 1 had just created, and inserted duplicates (observed: 104 diary rows for 5 distinct IDs on 2026-07-25; duplicate job feed rows).
+
+**Fix:** Before any upserts, fetch all existing pages into a `Map<externalId, pageId>` in memory. Each upsert does a local map lookup instead of a Notion query. Newly created pages are added to the map immediately so subsequent items in the same run can't re-create them. The per-item `findPageByExternalId` is kept as a fallback when no map is provided.
+
+- **Diary:** `fetchDiaryPageMap(fromDate, toDate)` — fetches pages filtered to current week date range (bounded set).
+- **Job feed:** `fetchJobFeedPageMap()` — fetches ALL job pages (paginated, 100 at a time). No date filter because jobs accumulate indefinitely. Adds ~1-2 seconds to sync startup via extra Notion API calls, but no extra Upwork requests.
 
 ### Known quirks
 
@@ -383,13 +391,75 @@ Each session gets a unique `externalId` of the form `contract-<id>-<yyyyMMdd>-<H
 - Sync takes ~4 seconds per run. 1-minute interval has ample headroom.
 - Overlapping syncs are safe — Notion upserts are idempotent (dedup by `External ID`)
 
-### What's next (Phase 3)
+### Product versioning
 
-See `docs/progress.md` for the full roadmap. Summary:
-- Auto-create Notion databases (remove manual setup)
-- Onboarding flow for new users
-- Email notifications when new matching jobs appear
-- Freelancer profile snapshot (JSS, earnings, top-rated) → Notion
+**v1 — Read pipeline (multi-tenant)** ← current focus
+The sync pipeline reads from Upwork and writes to Notion for every registered user. One cron run → loop over all users → run job feed + work diary per user. No write operations to Upwork.
+
+Still to finish in v1:
+- Multi-tenant sync: `/api/sync` currently runs for a single user (first row in `upwork_tokens`). Needs to loop over all users.
+- Onboarding flow for new users (connect Upwork + Notion, create DBs)
+
+**v2 — Proposal submission**
+Add `POST /api/apply` so a Notion AI agent can submit proposals to Upwork on the user's behalf. See plan below.
+
+### Phase 4 plan — proposal submission API + dashboard button
+
+**Goal:** User clicks "Apply" on a job in the dashboard → proposal submitted to Upwork via API → job marked Applied in Notion.
+
+**Step 1 — New API route: `POST /api/upwork/apply`**
+
+Body: `{ jobId: string, chargedAmount: number, coverLetter: string }`
+
+- Look up userId from session (same pattern as `gql.ts`)
+- Fetch `user.nid` and hard-code org ID (or store in `user_settings`)
+- Call `createJobProposal` mutation with confirmed field values
+- On success: mark the job as Applied in Notion (`Applied: true`, `Proposal link: "https://www.upwork.com/ab/proposals/<newProposalId>"`)
+- Return `{ ok: true, proposalId }` or error
+
+**Step 2 — Store org ID + nid in user_settings**
+
+Add `upwork_nid` and `upwork_org_id` columns to `user_settings` in Supabase. Populate them once at OAuth callback time (query `user { nid }` and `vendorProposals { organization { id } }` right after token exchange). This avoids hard-coding per-user values in code.
+
+**Step 3 — Dashboard "Apply" button**
+
+In the recent jobs table, add an "Apply" button per row (only for jobs where `action !== "skipped"` and `applied !== true`). Clicking opens a small modal with:
+- Cover letter textarea (pre-filled with template)
+- Rate/bid input (pre-filled from job's rate range)
+- Submit button
+
+On submit: POST to `/api/upwork/apply`, show success/error toast, update the row badge to `applied`.
+
+**Step 4 — Sync picks up the proposal**
+
+No extra work needed — the next cron run will call `vendorProposals` which will include the new proposal, and the job feed sync will annotate the Notion job page with `Applied: true` and the proposal URL.
+
+**Core route: `POST /api/apply`**
+
+Designed to be called by a Notion AI agent that has read access to the Job Feed DB. The agent reads `External ID` from the job page and passes it directly.
+
+```json
+// Request (Authorization: Bearer <API_SECRET>)
+{ "externalId": "job-2084364540816197571", "chargedAmount": 50, "coverLetter": "..." }
+
+// Response (success)
+{ "ok": true, "proposalId": "2084370906841661441" }
+
+// Response (error)
+{ "ok": false, "error": "ALREADY_APPLIED" }
+```
+
+Server steps:
+1. Strip `job-` prefix → numeric Upwork job ID
+2. Call `createJobProposal` with confirmed field values
+3. On success → find Notion page by `externalId`, set `Applied: true` + `Proposal link: https://www.upwork.com/ab/proposals/<proposalId>`
+4. Return result
+
+**Constraints:**
+- `chargedAmount` for fixed-price jobs = total bid; for hourly = hourly rate
+- Upwork requires questions to be answered if the job has screening questions — first version ignores them (proposal may fail with UNEXPECTED_ERROR in that case)
+- Connects are spent on each application (Upwork deducts them server-side)
+- `upwork_nid` and `upwork_org_id` should be stored in `user_settings` (populated at OAuth callback) rather than hard-coded
 
 
 ## Coding standards

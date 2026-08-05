@@ -14,7 +14,16 @@ export default async function handler(
     return res.status(405).json({ ok: false, error: "use POST with {query, variables}" });
   }
 
-  const token = await getValidAccessToken();
+  const { getSupabaseServer } = await import("@/lib/supabaseServer");
+  const supabase = getSupabaseServer(req, res);
+  const { data: { user } } = await supabase.auth.getUser();
+  let userId = user?.id;
+  if (!userId) {
+    const { getSupabase } = await import("@/lib/supabase");
+    const { data } = await getSupabase().from("upwork_tokens").select("user_id").limit(1).maybeSingle();
+    userId = data?.user_id ?? undefined;
+  }
+  const token = await getValidAccessToken(userId);
   if (!token) {
     return res.status(401).json({ ok: false, error: "no_token" });
   }

@@ -11,12 +11,22 @@ export default async function handler(
   if (!requireAuth(req, res)) return;
 
   try {
+    const { getSupabaseServer } = await import("@/lib/supabaseServer");
+    const supabase = getSupabaseServer(req, res);
+    const { data: { user } } = await supabase.auth.getUser();
+    let userId = user?.id;
+    if (!userId) {
+      const { getSupabase } = await import("@/lib/supabase");
+      const { data } = await getSupabase().from("upwork_tokens").select("user_id").limit(1).maybeSingle();
+      userId = data?.user_id ?? undefined;
+    }
+
     const { path = "contracts?limit=10" } = req.query;
     if (Array.isArray(path)) {
       return res.status(400).json({ ok: false, error: "bad_path_param" });
     }
 
-    const result = await callUpwork(String(path));
+    const result = await callUpwork(String(path), undefined, userId);
     if (!result.ok) {
       return res.status(result.status ?? 502).json({
         ok: false,

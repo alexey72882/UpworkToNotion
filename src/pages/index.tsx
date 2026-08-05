@@ -28,7 +28,7 @@ export default function Landing() {
           <div className="flex items-center gap-3">
             <Logo size={40} />
             <span style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 800, fontSize: 18, color: NAVY }}>
-              UpworkToNotion
+              Freelancelog
             </span>
           </div>
           {/* Desktop nav */}

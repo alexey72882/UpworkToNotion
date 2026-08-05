@@ -4,8 +4,8 @@ import Link from "next/link";
 import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
 import AppLayout from "@/components/AppLayout";
 
-type RecentJob = { title: string; action: "created" | "updated" };
-type SyncResult = { fetched: number; created: number; updated: number; skipped: number; recentJobs?: RecentJob[] };
+type RecentJob = { title: string; action: "created" | "updated" | "skipped" };
+type SyncResult = { fetched: number; created: number; updated: number; skipped: number; recentJobs?: RecentJob[]; error?: string | null };
 type WebFilter = {
   skillExpression?: string;
   category?: string;
@@ -255,33 +255,50 @@ export default function Dashboard() {
 
           {/* Recent jobs table */}
           {lastResult?.jobs?.recentJobs && lastResult.jobs.recentJobs.length > 0 && (
-            <div className="bg-base-100 shadow-sm rounded-box overflow-hidden">
-              <div className="px-4 py-3 border-b border-base-200">
-                <span className="font-medium text-sm">Last sync — {lastResult.jobs.fetched} jobs</span>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="table table-sm">
-                  <thead>
-                    <tr>
-                      <th>Title</th>
-                      <th className="w-24">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {lastResult.jobs.recentJobs.map((job, i) => (
-                      <tr key={i}>
-                        <td className="max-w-xs truncate">{job.title}</td>
-                        <td>
-                          <span className={`badge badge-sm ${job.action === "created" ? "badge-success badge-soft" : "badge-ghost"}`}>
-                            {job.action === "created" ? "new" : "updated"}
-                          </span>
-                        </td>
+            <>
+              {lastResult.jobs.error ? (
+                <div role="alert" className="alert alert-error alert-soft text-sm">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" className="stroke-current h-6 w-6 shrink-0">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span>Notion Job Feed DB is disconnected. Jobs were fetched from Upwork but not saved.</span>
+                </div>
+              ) : (
+                <div role="alert" className="alert bg-white text-sm">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" className="stroke-current text-info h-6 w-6 shrink-0">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span>Upwork caps results at 10 jobs per query. <span className="badge badge-xs badge-success badge-soft">new</span> = added to Notion&nbsp;&nbsp;<span className="badge badge-xs badge-ghost">updated</span> = already existed.</span>
+                </div>
+              )}
+              <div className="bg-base-100 shadow-sm rounded-box overflow-hidden">
+                <div className="px-4 py-3 border-b border-base-200">
+                  <span className="font-medium text-sm">Last sync — {lastResult.jobs.fetched} jobs</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="table table-sm">
+                    <thead>
+                      <tr>
+                        <th>Title</th>
+                        <th className="w-24">Status</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {lastResult.jobs.recentJobs.map((job, i) => (
+                        <tr key={i}>
+                          <td className="max-w-xs truncate">{job.title}</td>
+                          <td>
+                            <span className={`badge badge-sm ${job.action === "created" ? "badge-success badge-soft" : job.action === "updated" ? "badge-ghost" : "badge-neutral badge-soft"}`}>
+                              {job.action}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
+            </>
           )}
         </div>
       )}

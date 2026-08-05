@@ -99,19 +99,26 @@ async function syncUser(settings: UserSettings, force?: string) {
     if (proposalId) item.proposalUrl = `https://www.upwork.com/ab/proposals/${proposalId}`;
   }
 
-  let jobCreated = 0, jobUpdated = 0, jobSkipped = 0;
-  const recentJobs: { title: string; action: "created" | "updated" }[] = [];
+  let jobCreated = 0, jobUpdated = 0, jobSkipped = 0, jobsError: string | null = null;
+  const recentJobs: { title: string; action: "created" | "updated" | "skipped" }[] = jobItems.map(i => ({ title: i.title, action: "skipped" as const }));
   if (jobItems.length > 0 && settings.job_feed_db_id) {
-    const jobPageMap = await fetchJobFeedPageMap({ notion, dbId: settings.job_feed_db_id });
-    for (const item of jobItems) {
-      try {
-        const result = await upsertJobFeedItem(item, { notion, dbId: settings.job_feed_db_id, pageMap: jobPageMap });
-        if (result === "created") jobCreated++; else jobUpdated++;
-        recentJobs.push({ title: item.title, action: result });
-      } catch (err) {
-        jobSkipped++;
-        logger.warn({ externalId: item.externalId, err }, "job upsert failed, skipping");
+    try {
+      const jobPageMap = await fetchJobFeedPageMap({ notion, dbId: settings.job_feed_db_id });
+      for (let i = 0; i < jobItems.length; i++) {
+        const item = jobItems[i];
+        try {
+          const result = await upsertJobFeedItem(item, { notion, dbId: settings.job_feed_db_id, pageMap: jobPageMap });
+          if (result === "created") jobCreated++; else jobUpdated++;
+          recentJobs[i].action = result;
+        } catch (err) {
+          jobSkipped++;
+          logger.warn({ externalId: item.externalId, err }, "job upsert failed, skipping");
+        }
       }
+    } catch (err) {
+      jobsError = err instanceof Error ? err.message : String(err);
+      jobSkipped = jobItems.length;
+      logger.error({ err }, "job feed Notion error — DB may be disconnected");
     }
   }
 
@@ -130,7 +137,7 @@ async function syncUser(settings: UserSettings, force?: string) {
   }
 
   return {
-    jobs: { fetched: jobItems.length, created: jobCreated, updated: jobUpdated, skipped: jobSkipped, recentJobs },
+    jobs: { fetched: jobItems.length, created: jobCreated, updated: jobUpdated, skipped: jobSkipped, recentJobs, error: jobsError },
     contracts: { fetched: contractItems.length, created: contractCreated, updated: contractUpdated, skipped: contractSkipped },
     proposalsSynced: shouldFetchProposals,
     diarySynced: shouldFetchDiary,
