@@ -155,32 +155,37 @@ async function findPageByExternalId(notion: Client, dbId: string, externalId: st
   return null;
 }
 
-// Bulk-fetch all job feed pages into a map of externalId → pageId.
-// Prevents duplicates from Notion eventual-consistency lag under concurrent syncs.
-// Fetches only External ID to keep payload small across potentially large DBs.
+// Fetch existing job-feed pages for only the External IDs seen this run, as a map
+// of externalId → pageId. Prevents duplicates from Notion eventual-consistency lag
+// under concurrent syncs. Queries by an `or` of the exact IDs so cost is O(run size),
+// not O(total DB) — the previous full-DB scan grew unbounded (see specs/0002).
 export async function fetchJobFeedPageMap(
+  externalIds: string[],
   opts?: { notion?: Client; dbId?: string }
 ): Promise<Map<string, string>> {
   const notion = opts?.notion ?? getNotion();
   const dbId = opts?.dbId ?? getDbId("NOTION_JOB_FEED_DATABASE_ID");
   const map = new Map<string, string>();
-  let cursor: string | undefined;
-  do {
+  if (externalIds.length === 0) return map;
+
+  // Notion caps compound filters at 100 conditions; batch to stay under it.
+  // External ID is unique, so each batch matches ≤100 rows → one page, no cursor.
+  for (let i = 0; i < externalIds.length; i += 100) {
+    const batch = externalIds.slice(i, i + 100);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const resp: any = await notion.request({
       path: `databases/${dbId}/query`,
       method: "post",
       body: {
+        filter: { or: batch.map(id => ({ property: "External ID", rich_text: { equals: id } })) },
         page_size: 100,
-        ...(cursor ? { start_cursor: cursor } : {}),
       },
     });
     for (const page of resp?.results ?? []) {
       const id: string = page.properties?.["External ID"]?.rich_text?.[0]?.plain_text;
       if (id) map.set(id, page.id);
     }
-    cursor = resp?.has_more ? resp.next_cursor : undefined;
-  } while (cursor);
+  }
   return map;
 }
 

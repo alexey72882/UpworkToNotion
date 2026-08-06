@@ -103,7 +103,7 @@ async function syncUser(settings: UserSettings, force?: string) {
   const recentJobs: { title: string; action: "created" | "updated" | "skipped" }[] = jobItems.map(i => ({ title: i.title, action: "skipped" as const }));
   if (jobItems.length > 0 && settings.job_feed_db_id) {
     try {
-      const jobPageMap = await fetchJobFeedPageMap({ notion, dbId: settings.job_feed_db_id });
+      const jobPageMap = await fetchJobFeedPageMap(jobItems.map(i => i.externalId), { notion, dbId: settings.job_feed_db_id });
       for (let i = 0; i < jobItems.length; i++) {
         const item = jobItems[i];
         try {

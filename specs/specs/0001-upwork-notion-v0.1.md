@@ -49,19 +49,19 @@ Goal: fast iteration for a single user, validate the workflow.
 
 - [x] Sync proposals to Notion (Applied → Hired stages)
 - [x] Sync marketplace job feed (Lead stage)
-- [ ] Separate Notion DBs: filtered job feed, search filters, active contracts
-- [ ] Read search filters from Notion filters DB (keyword, category, budget, experience level, etc.)
-- [ ] Sync active contracts from Upwork
+- [x] Separate Notion DBs: filtered job feed + work diary (filters moved to Supabase `web_filter`)
+- [x] Read search filters (now from `user_settings.web_filter` in Supabase, not a Notion DB)
+- [x] Sync active contracts / work diary from Upwork
 
 ### Phase 2 — SaaS foundation
 Goal: make it usable by other freelancers, charge monthly.
 
-- [ ] User auth (login / signup)
-- [ ] Per-user Upwork OAuth flow (each user connects their own account)
-- [ ] Per-user data isolation in Supabase (user_id on all tables)
+- [x] User auth (login / signup)
+- [x] Per-user Upwork OAuth flow (each user connects their own account)
+- [x] Per-user data isolation in Supabase (user_id on all tables)
 - [ ] Stripe subscription billing (monthly plan)
-- [ ] Web UI to manage search filters (replaces Notion filters DB)
-- [ ] Dashboard: sync history, stats, last run status
+- [x] Web UI to manage search filters (replaces Notion filters DB)
+- [x] Dashboard: sync history, stats, last run status
 
 ### Phase 3 — Growth
 - [ ] Multiple Upwork accounts per user
