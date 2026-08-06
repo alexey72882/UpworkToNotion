@@ -71,7 +71,7 @@ Both the work diary and job feed use a bulk page map to prevent duplicate Notion
 **Fix:** Before any upserts, fetch existing pages into a `Map<externalId, pageId>` in memory. Each upsert does a local map lookup instead of a Notion query. Newly created pages are added to the map immediately so subsequent items in the same run can't re-create them. The per-item `findPageByExternalId` is kept as a fallback when no map is provided.
 
 - **Diary:** `fetchDiaryPageMap(fromDate, toDate)` — fetches pages filtered to current week date range (bounded set).
-- **Job feed:** `fetchJobFeedPageMap()` — fetches ALL job pages (paginated, 100 at a time). No date filter because jobs accumulate indefinitely. Adds ~1-2 seconds to sync startup via extra Notion API calls, but no extra Upwork requests. **Known scaling problem** — this scan is O(total jobs) and unbounded; see `specs/specs/0002-20-user-readiness.md` for the fix.
+- **Job feed:** `fetchJobFeedPageMap(externalIds)` — queries only the External IDs seen this run via an `or` filter (batched at 100/query, Notion's compound-filter cap). Cost is O(run size), not O(total DB). This replaced the old unbounded full-DB scan that grew to ~27s (0002 Step 1).
 
 ### Known quirks
 

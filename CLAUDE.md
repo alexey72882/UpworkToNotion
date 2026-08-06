@@ -265,7 +265,7 @@ Forward-looking specs live in `specs/specs/`:
 - `0002-20-user-readiness.md` — scaling the sync pipeline to ~20 users
 - `0003-proposal-submission.md` — v2 proposal-submission API + dashboard button
 
-The sync pipeline is wired up end-to-end. Known scaling limit: `fetchJobFeedPageMap` scans the entire job DB every run (see `0002`).
+The sync pipeline is wired up end-to-end. `fetchJobFeedPageMap` now queries only the current run's External IDs (0002 Step 1 done); remaining scaling work (per-user fan-out) is in `0002`.
 
 
 ## Coding standards
