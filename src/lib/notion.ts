@@ -208,6 +208,45 @@ export async function upsertJobFeedItem(
   return "created";
 }
 
+// Cap the job-feed DB at `keep` rows by archiving the oldest (earliest `Created`
+// published date). Queries newest-first, skips the first `keep`, and archives the
+// rest — stopping once it has `max` targets, so it never rescans the whole DB.
+// Archiving moves pages to Notion trash (recoverable ~30 days). Returns count archived.
+export async function pruneJobFeed(
+  opts: { notion: Client; dbId: string; keep: number; max: number }
+): Promise<number> {
+  const { notion, dbId, keep, max } = opts;
+  const toArchive: string[] = [];
+  let seen = 0;
+  let cursor: string | undefined;
+  outer: do {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const resp: any = await notion.request({
+      path: `databases/${dbId}/query`,
+      method: "post",
+      body: {
+        sorts: [{ property: "Created", direction: "descending" }],
+        page_size: 100,
+        ...(cursor ? { start_cursor: cursor } : {}),
+      },
+    });
+    for (const page of resp?.results ?? []) {
+      seen++;
+      if (seen > keep) {
+        toArchive.push(page.id);
+        if (toArchive.length >= max) break outer;
+      }
+    }
+    cursor = resp?.has_more ? resp.next_cursor : undefined;
+  } while (cursor);
+
+  for (const id of toArchive) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await notion.pages.update({ page_id: id, archived: true } as any);
+  }
+  return toArchive.length;
+}
+
 // ---------------------------------------------------------------------------
 // Contracts DB upsert
 // ---------------------------------------------------------------------------

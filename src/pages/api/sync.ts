@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { upsertJobFeedItem, upsertContractDayItem, fetchJobFeedPageMap, fetchDiaryPageMap, getNotionForUser } from "@/lib/notion";
+import { upsertJobFeedItem, upsertContractDayItem, fetchJobFeedPageMap, fetchDiaryPageMap, pruneJobFeed, getNotionForUser } from "@/lib/notion";
 import { fetchUpworkItems, fetchJobFeed, fetchContractDays, getCurrentWeekRange } from "@/lib/upwork";
 import { webFilterToJobFilters } from "@/lib/webFilter";
 import { getValidAccessToken } from "@/lib/upworkToken";
@@ -26,6 +26,9 @@ type Err = { ok: false; error: string };
 
 const PROPOSALS_INTERVAL_MS = 60 * 60 * 1000;   // 1 hour
 const DIARY_INTERVAL_MS    = 10 * 60 * 1000;   // 10 minutes
+const PRUNE_INTERVAL_MS    = 24 * 60 * 60 * 1000; // 1 day
+const JOB_FEED_CAP         = 1000;              // max rows kept in the job feed DB
+const PRUNE_MAX_PER_RUN    = 50;               // bound archives/run to stay under timeout
 
 type UserSettings = {
   user_id: string;
@@ -39,6 +42,7 @@ type UserSettings = {
   web_filter: unknown | null;
   last_proposals_sync_at: string | null;
   last_diary_sync_at: string | null;
+  last_prune_at: string | null;
   last_sync_at: string | null;
 };
 
@@ -122,6 +126,23 @@ async function syncUser(settings: UserSettings, force?: string) {
     }
   }
 
+  // Cap the job-feed DB. Prune daily, or immediately after a run that created jobs
+  // (the only way to exceed the cap). While still draining a backlog we hit the
+  // per-run limit, so we hold off advancing the daily clock until we've caught up.
+  let pruned = 0;
+  let pruneClockAdvanced = false;
+  const shouldPrune = force === "prune" || jobCreated > 0 || !settings.last_prune_at ||
+    now - new Date(settings.last_prune_at).getTime() >= PRUNE_INTERVAL_MS;
+  if (shouldPrune && settings.job_feed_db_id) {
+    try {
+      pruned = await pruneJobFeed({ notion, dbId: settings.job_feed_db_id, keep: JOB_FEED_CAP, max: PRUNE_MAX_PER_RUN });
+      pruneClockAdvanced = pruned < PRUNE_MAX_PER_RUN;
+      logger.info({ pruned, caughtUp: pruneClockAdvanced }, "job feed pruned");
+    } catch (err) {
+      logger.error({ err }, "job feed prune failed");
+    }
+  }
+
   let contractCreated = 0, contractUpdated = 0, contractSkipped = 0;
   if (contractItems.length > 0 && settings.diary_db_id) {
     const pageMap = await fetchDiaryPageMap(rangeStart, rangeEnd, { notion, dbId: settings.diary_db_id });
@@ -141,6 +162,8 @@ async function syncUser(settings: UserSettings, force?: string) {
     contracts: { fetched: contractItems.length, created: contractCreated, updated: contractUpdated, skipped: contractSkipped },
     proposalsSynced: shouldFetchProposals,
     diarySynced: shouldFetchDiary,
+    pruned,
+    pruneClockAdvanced,
   };
 }
 
@@ -237,6 +260,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
           updated_at: now,
           ...(result?.proposalsSynced && { last_proposals_sync_at: now }),
           ...(result?.diarySynced && { last_diary_sync_at: now }),
+          ...(result?.pruneClockAdvanced && { last_prune_at: now }),
         })
         .eq("user_id", userId);
     }
