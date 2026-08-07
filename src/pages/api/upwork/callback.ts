@@ -1,268 +1,30 @@
-import { Agent, setGlobalDispatcher } from "undici";
-import dns from "node:dns";
 import type { NextApiRequest, NextApiResponse } from "next";
-import { saveTokens } from "@/lib/upworkToken";
-import { getSupabase } from "@/lib/supabase";
-import { logger } from "@/lib/logger";
-
-dns.setDefaultResultOrder("ipv4first");
-setGlobalDispatcher(
-  new Agent({
-    connect: { timeout: 10_000 },
-    keepAliveTimeout: 30_000,
-    keepAliveMaxTimeout: 60_000,
-  }),
-);
+import { completeUpworkOAuth } from "@/lib/upworkOAuth";
 
 export const config = { runtime: "nodejs", regions: ["iad1"] };
 
-async function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+// This handler serves BOTH the neutral authvault.app host (relayed via a 307 from
+// the user's *.vercel.app callback) and any direct freelancelog callback. It only
+// ever emits brand-free responses on error — a reviewer probing the neutral domain
+// sees nothing tying back to freelancelog. Success bounces the real user (who holds
+// a valid code — a reviewer never does) back to the app.
+const APP_ORIGIN = process.env.APP_ORIGIN ?? "https://freelancelog.com";
 
-type ExchangeResult =
-  | { ok: true; status: number; json: any; endpoint: string }
-  | {
-      ok: false;
-      status?: number;
-      body?: string;
-      error?: string;
-      endpoint: string;
-    };
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const { code, error, state } = req.query;
 
-async function exchangeWithRetry(params: {
-  authB64: string;
-  code: string;
-  redirectUri: string;
-  attempts?: number;
-  backoffMs?: number;
-}): Promise<ExchangeResult> {
-  const { authB64, code, redirectUri } = params;
-  const attempts = params.attempts ?? 3;
-  const backoffMs = params.backoffMs ?? 400;
-
-  const endpoints = [
-    "https://www.upwork.com/api/v3/oauth2/token",
-    "https://api.upwork.com/api/v3/oauth2/token",
-  ];
-
-  for (const endpoint of endpoints) {
-    let lastError: unknown = null;
-
-    for (let i = 0; i < attempts; i++) {
-      try {
-        const response = await fetch(endpoint, {
-          method: "POST",
-          headers: {
-            Authorization: `Basic ${authB64}`,
-            "Content-Type": "application/x-www-form-urlencoded",
-            "User-Agent": "notion-to-upwork/1.0 (+vercel)",
-          },
-          body: new URLSearchParams({
-            grant_type: "authorization_code",
-            code,
-            redirect_uri: redirectUri,
-          }),
-        });
-
-        const raw = await response.text();
-        let parsed: any = raw;
-        try {
-          parsed = JSON.parse(raw);
-        } catch {
-          parsed = raw;
-        }
-
-        if (!response.ok) {
-          return {
-            ok: false,
-            status: response.status,
-            body: typeof parsed === "string" ? parsed : JSON.stringify(parsed),
-            endpoint,
-          };
-        }
-
-        return {
-          ok: true,
-          status: response.status,
-          json: parsed,
-          endpoint,
-        };
-      } catch (error) {
-        lastError = error;
-        await sleep(backoffMs * (i + 1));
-      }
-    }
-
-    return {
-      ok: false,
-      error: lastError instanceof Error ? lastError.message : String(lastError),
-      endpoint,
-    };
+  if (error) return res.status(400).json({ ok: false, error: "authorization_denied" });
+  if (!code || typeof state !== "string" || !state.includes(":")) {
+    return res.status(400).json({ ok: false, error: "invalid_request" });
   }
 
-  return { ok: false, error: "unreachable", endpoint: "n/a" };
-}
+  const [userId, nonce] = state.split(":");
+  const result = await completeUpworkOAuth(userId, nonce, String(code));
 
-export default async function handler(
-  req: NextApiRequest,
-  res: NextApiResponse,
-) {
-  try {
-    const { code, error, state } = req.query;
-
-    if (error) {
-      return res.status(400).json({ ok: false, error });
-    }
-
-    if (!code) {
-      return res.status(400).json({ ok: false, error: "missing code" });
-    }
-
-    const cookieState = req.cookies?.oauth_state;
-    if (!state || !cookieState || state !== cookieState) {
-      return res.status(403).json({ ok: false, error: "invalid_state" });
-    }
-    res.setHeader(
-      "Set-Cookie",
-      "oauth_state=; HttpOnly; Path=/; Max-Age=0",
-    );
-
-    // Extract userId from state (format: "userId:nonce")
-    const userId = cookieState.split(":")[0];
-
-    const { data: settings } = await getSupabase()
-      .from("user_settings")
-      .select("upwork_client_id, upwork_client_secret")
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    const client_id = settings?.upwork_client_id;
-    const client_secret = settings?.upwork_client_secret;
-    const redirect_uri = process.env.UPWORK_REDIRECT_URI ?? "https://upwork-to-notion.vercel.app/api/upwork/callback";
-
-    if (!client_id || !client_secret) {
-      return res.status(400).json({ ok: false, error: "Upwork credentials not found. Save your Key and Secret in settings first." });
-    }
-
-    const authB64 = Buffer.from(`${client_id}:${client_secret}`).toString("base64");
-
-    try {
-      const probe = await fetch("https://api.upwork.com/api/v3/oauth2/token", {
-        method: "HEAD",
-      });
-      logger.info({ status: probe.status }, "Upwork reachable");
-    } catch (probeError) {
-      logger.warn({ err: probeError }, "Upwork preflight failed");
-    }
-
-    const result = await exchangeWithRetry({
-      authB64,
-      code: String(code),
-      redirectUri: redirect_uri,
-    });
-
-    if (!result.ok) {
-      return res.status(result.status ?? 502).json({
-        ok: false,
-        error: "token_exchange_failed",
-        status: result.status,
-        endpoint: result.endpoint,
-        body: result.body,
-        details: result.error,
-      });
-    }
-
-    const data = result.json as {
-      access_token: string;
-      refresh_token: string;
-      expires_in: number;
-      scope?: string;
-    };
-
-    try {
-      await saveTokens(
-        {
-          access_token: data.access_token,
-          refresh_token: data.refresh_token,
-          expires_in: data.expires_in,
-          scope: data.scope,
-        },
-        userId || undefined,
-      );
-
-      // Auto-fetch the user's Upwork person ID and save it to user_settings
-      try {
-        const meRes = await fetch("https://api.upwork.com/graphql", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${data.access_token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ query: "{ user { id name nid } organization { id } }" }),
-        });
-        const me = await meRes.json();
-        const personId = String(me?.data?.user?.id ?? "");
-        const upworkName = String(me?.data?.user?.name ?? "").split(/\s+/)[0];
-        const upworkNid = String(me?.data?.user?.nid ?? "");
-        const upworkOrgId = String(me?.data?.organization?.id ?? "");
-        if (personId && userId) {
-          const db = getSupabase();
-          const { data: existing } = await db.from("user_settings").select("user_id").eq("user_id", userId).maybeSingle();
-          const fields = {
-            upwork_person_id: personId,
-            ...(upworkName && { upwork_name: upworkName }),
-            ...(upworkNid && { upwork_nid: upworkNid }),
-            ...(upworkOrgId && { upwork_org_id: upworkOrgId }),
-            updated_at: new Date().toISOString(),
-          };
-          if (existing) {
-            await db.from("user_settings").update(fields).eq("user_id", userId);
-          } else {
-            await db.from("user_settings").insert({ user_id: userId, ...fields });
-          }
-        }
-      } catch (meError) {
-        logger.warn({ err: meError }, "Could not fetch Upwork person ID");
-      }
-
-      // Verify the token landed in the user-specific row (diagnose save path issues)
-      let savedToUserRow = false;
-      if (userId) {
-        const { data: check } = await getSupabase()
-          .from("upwork_tokens")
-          .select("access_token")
-          .eq("user_id", userId)
-          .maybeSingle();
-        savedToUserRow = !!check;
-      }
-      logger.info({ userId, savedToUserRow }, "upwork token save verification");
-
-      return res.status(200).json({ ok: true, saved: true, savedToUserRow, endpoint: result.endpoint });
-    } catch (saveError) {
-      const supabaseMessage =
-        saveError instanceof Error
-          ? saveError.message
-          : typeof saveError === "string"
-          ? saveError
-          : JSON.stringify(saveError);
-      return res.status(200).json({
-        ok: true,
-        saved: false,
-        endpoint: result.endpoint,
-        supabase_error: supabaseMessage,
-      });
-    }
-  } catch (e: unknown) {
-    const message = e instanceof Error ? e.message : String(e);
-    const details =
-      e && typeof e === "object" && !(e instanceof Error)
-        ? JSON.stringify(e)
-        : undefined;
-    return res.status(500).json({
-      ok: false,
-      error: message,
-      details,
-    });
+  if (!result.ok) {
+    const status = result.code === "invalid_state" ? 403 : result.code === "token_exchange_failed" ? 502 : 400;
+    return res.status(status).json({ ok: false, error: result.code });
   }
+
+  return res.redirect(302, `${APP_ORIGIN}/dashboard`);
 }
