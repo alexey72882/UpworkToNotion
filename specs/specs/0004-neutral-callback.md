@@ -19,7 +19,7 @@ Because the callback lands off `freelancelog.com`, OAuth CSRF state moves from t
 
 ## Components
 
-- `middleware.ts` — host path-gating for `authvault.app`.
+- `vercel.json` rewrites (host `has` condition) — path-gate `authvault.app`: every path except `/api/upwork/callback` rewrites to `/api/gate` (blank 404). Done via Vercel platform routing rather than Next middleware (Next 16 user-middleware breaks the Vercel builder's `middleware.js.nft.json` step).
 - `src/lib/upworkOAuth.ts` — `completeUpworkOAuth(userId, nonce, code)`: server-side nonce validation + token exchange (per-user `upwork_redirect_uri`) + save + nid/org/person capture.
 - `src/pages/api/upwork/auth.ts` — server-side nonce, per-user redirect_uri (no auto-assign).
 - `src/pages/api/upwork/callback.ts` — thin: parse state → `completeUpworkOAuth` → neutral error / success bounce to the app.
