@@ -1,7 +1,18 @@
 # 0002 – 20-user readiness (sync pipeline scaling)
 
-**Status:** Planned
+**Status:** Mostly shipped (2026-08-07)
 **Owner:** @alexey72882
+
+## Progress (2026-08-07)
+
+Core scaling work is live in production. Verified against the one real user; 20-user scale not load-tested (no other accounts exist yet).
+
+- ✅ **Step 1** — targeted per-run-ID Notion query (PR #5). ~35s → ~9s.
+- ✅ **Step 2** — per-user fan-out dispatcher + `runUserSync` (PR #7). Also fixed the `duration_ms` bug (Step 5) for free.
+- ✅ **Step 3** — `withRetry` on Upwork `gqlFetch` + Notion calls (PR #8). Concurrency throttling **dropped**: per-user Upwork apps mean no shared rate-limit ceiling.
+- ✅ **Job-feed 1000-row cap** (Step 5 item, PR #6) — `pruneJobFeed`, daily gate, `last_prune_at` column. Backlog draining in prod.
+- ⏸️ **Step 5 token-refresh lock** — deferred (low-value edge case; needs a Supabase-backed lock. Revisit only if 401/token-invalid errors appear with multiple users).
+- ⏸️ **Step 4 Vercel Pro** — deferred until real-user onboarding begins (billing, not code).
 
 ## Context
 
@@ -37,7 +48,7 @@ Reliably sync ~20 users with current functionality: no timeouts, no starved user
 
 ## Plan
 
-### Step 1 — Eliminate the full-DB page-map rescan (the 27s killer) — highest impact
+### Step 1 — Eliminate the full-DB page-map rescan (the 27s killer) — highest impact  ✅ SHIPPED (PR #5)
 
 **Regression history:** the bulk page-map was a deliberate, correct fix (commit `9db4c2e`) for Notion eventual-consistency duplicates — same fix as the diary after the "104 rows for 5 IDs" incident. It was originally bounded to `Created ≥ last 24h`. Commit `d29ef7c` silently deleted that `since` filter, turning it into an unbounded full-table scan that grew to 5,633 pages / 27s.
 
@@ -48,19 +59,19 @@ Reliably sync ~20 users with current functionality: no timeouts, no starved user
 - Out of scope: moving the dedup key into Supabase. Considered and declined — targeted query matches current safety at far lower cost.
 - Do NOT touch `fetchDiaryPageMap` — already bounded to the current week, cheap and correct.
 
-### Step 2 — Fan-out so users don't share one 60s function
+### Step 2 — Fan-out so users don't share one 60s function  ✅ SHIPPED (PR #7)
 - Cron `/api/sync` becomes a dispatcher: fetch user IDs, then fire one lightweight self-call per user (e.g. `POST /api/sync/user` with `{ userId }`, guarded by `API_SECRET`), not awaiting them serially. Each user runs in its own function instance under its own timeout.
 - Extract the existing `syncUser()` body (`sync.ts:45`) into the per-user route; keep the per-user try/catch isolation.
 - Bound fan-out concurrency (Step 3) to respect the shared Upwork app rate limit.
 
-### Step 3 — Bounded concurrency + retry/backoff (Upwork app-limit aware)
+### Step 3 — Bounded concurrency + retry/backoff (Upwork app-limit aware)  ✅ SHIPPED retry (PR #8); throttling dropped (per-user apps)
 - Add a concurrency limiter (`p-limit`, ~3–5 concurrent users) around the fan-out.
 - Add exponential-backoff retry (3 attempts, jitter) around Notion writes and Upwork `gqlFetch` — retry on 429/5xx only, honor `Retry-After`. Reuse the `exchangeWithRetry` pattern in `src/pages/api/upwork/callback.ts`.
 
-### Step 4 — Vercel Pro (billing, not code)
+### Step 4 — Vercel Pro (billing, not code)  ⏸️ DEFERRED until onboarding
 Free tier (4 hr/month CPU) is already ~2.3 hr/month for one user. Upgrade to Pro before onboarding; raise `maxDuration` for the per-user route to 120–300s for headroom.
 
-### Step 5 — Cleanups surfaced by the test
+### Step 5 — Cleanups surfaced by the test  ✅ duration_ms fixed (PR #7), job-feed cap shipped (PR #6); ⏸️ token-refresh lock deferred
 - Fix `duration_ms` to measure per-user time (`sync.ts:211`).
 - Add a compare-and-swap / short lock on `getValidAccessToken` refresh (`upworkToken.ts`).
 - (Optional) prune/archive job-feed pages older than N days so the DB can't grow unbounded again.
