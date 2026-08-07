@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { getValidAccessToken } from "@/lib/upworkToken";
 import { logger } from "@/lib/logger";
+import { withRetry } from "@/lib/retry";
 import type { JobFilter } from "@/lib/notion";
 
 export const UpworkItem = z.object({
@@ -110,19 +111,28 @@ export function mapJobNode(node: any): unknown | null {
 }
 
 async function gqlFetch(token: string, query: string) {
-  const response = await fetch("https://api.upwork.com/graphql", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-      Accept: "application/json",
-      "User-Agent": "notion-to-upwork/1.0 (+vercel)",
-    },
-    body: JSON.stringify({ query }),
-  });
-  const text = await response.text();
-  if (!response.ok) throw new Error(`Upwork GraphQL HTTP ${response.status}: ${text.slice(0, 200)}`);
-  return JSON.parse(text);
+  return withRetry(async () => {
+    const response = await fetch("https://api.upwork.com/graphql", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        "User-Agent": "notion-to-upwork/1.0 (+vercel)",
+      },
+      body: JSON.stringify({ query }),
+    });
+    const text = await response.text();
+    if (!response.ok) {
+      // Enrich the error so withRetry can see the status + Retry-After.
+      const err = Object.assign(new Error(`Upwork GraphQL HTTP ${response.status}: ${text.slice(0, 200)}`), {
+        status: response.status,
+        headers: { "retry-after": response.headers.get("retry-after") ?? undefined },
+      });
+      throw err;
+    }
+    return JSON.parse(text);
+  }, { label: "upwork.gqlFetch" });
 }
 
 export async function fetchUpworkItems(accessToken?: string): Promise<UpworkItem[]> {
