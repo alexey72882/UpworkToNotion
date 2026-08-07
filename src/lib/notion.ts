@@ -189,6 +189,41 @@ export async function setJobScreeningQuestions(
   return true;
 }
 
+// Read the apply inputs a human/agent filled on a job page: the bid, cover
+// letter, the questions prepare wrote, and the answers. `Screening Questions` /
+// `Screening Answers` are returned as raw plain text for the caller to pair.
+// Returns null if no page matches.
+export type JobApplyInputs = {
+  bid: number | null;
+  coverLetter: string;
+  questionsText: string;
+  answersText: string;
+};
+export async function readJobApplyInputs(
+  notion: Client,
+  externalId: string,
+  opts?: { dbId?: string },
+): Promise<JobApplyInputs | null> {
+  const dbId = opts?.dbId ?? getDbId("NOTION_JOB_FEED_DATABASE_ID");
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const resp: any = await notionRequest(notion, {
+    path: `databases/${dbId}/query`,
+    method: "post",
+    body: { filter: { property: "External ID", rich_text: { equals: externalId } } },
+  });
+  const page = resp?.results?.[0];
+  if (!page) return null;
+  const props = page.properties ?? {};
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const richText = (p: any): string => (p?.rich_text ?? []).map((r: any) => r.plain_text).join("");
+  return {
+    bid: props["Bid"]?.number ?? null,
+    coverLetter: richText(props["Cover Letter"]),
+    questionsText: richText(props["Screening Questions"]),
+    answersText: richText(props["Screening Answers"]),
+  };
+}
+
 // Mark a job page as applied after a successful proposal submission. Returns
 // false if no page matches (submission still succeeded — caller decides).
 export async function markApplied(
