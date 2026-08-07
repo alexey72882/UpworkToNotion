@@ -171,7 +171,7 @@ async function findPageByExternalId(notion: Client, dbId: string, externalId: st
 }
 
 // Write a job's screening questions into its Job Feed page for the human to
-// answer. Writes only the `Screening Questions` property (outside buildJobFeedProps,
+// answer. Writes only the `Screening questions` property (outside buildJobFeedProps,
 // so the periodic sync never clobbers it). Returns false if no page matches.
 export async function setJobScreeningQuestions(
   notion: Client,
@@ -184,7 +184,7 @@ export async function setJobScreeningQuestions(
   if (!pageId) return false;
   await notionUpdate(notion, {
     page_id: pageId,
-    properties: { "Screening Questions": { rich_text: [{ text: { content: questionsText.slice(0, 2000) } }] } },
+    properties: { "Screening questions": { rich_text: [{ text: { content: questionsText.slice(0, 2000) } }] } },
   });
   return true;
 }
