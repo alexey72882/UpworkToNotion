@@ -56,11 +56,17 @@ mutation {
 }
 ```
 
+The example above shows the required fields. The full `CreateJobProposalInput` (confirmed via introspection 2026-08-06) also accepts: `questions: [CreateProposalQuestion { question, answer }]` (screening-question answers — see below), `attachments`, `estimatedDuration`, `milestones: [CreateProposalMilestone]`, `boostBidAmount`, `occupationId`, `agencyOrgId`, `gitHubRepoLink`, `sri`, `umaTouched`, `umaThreadId`.
+
 Key gotchas confirmed by testing:
 - `oDeskUserID` = `nid` (username string `"alexkievua"`), NOT the numeric `rid` (`"6890346"`)
 - `teamOrgId` = org ID `540749103848333313` (fetched via `vendorProposals { organization { id } }`), NOT user ID
 - `jobReference` = numeric `id` from job search (e.g. `"2084364540816197571"`), NOT ciphertext (`~02...`)
 - Permissions include "Grants access to submit proposal to jobs" — write access is confirmed working
+
+**Screening questions (confirmed live 2026-08-06, read-only — no proposal submitted):**
+- Fetch a single job's screening questions via `marketplaceJobPosting(id: "<numeric_id>")` → `contractorSelection { proposalRequirement { coverLetterRequired screeningQuestions { question sequenceNumber } } }`. `id` must be the **numeric** job id (same as `jobReference`); ciphertext `~02...` returns 404. `screeningQuestions` is `[]` when the job has none.
+- Submit answers back via the `questions: [{ question, answer }]` field on `createJobProposal`.
 
 ### Dedup — bulk page map pattern
 
@@ -88,7 +94,7 @@ Both the work diary and job feed use a bulk page map to prevent duplicate Notion
 - `budgetRange_eq` on `marketplaceJobPostingsSearch` is completely non-functional — confirmed by testing with `{ rangeStart: 100, rangeEnd: 200 }` which returned jobs with $3–$5 and $10–$20 rates. The filter is silently ignored regardless of values. Same for `hourlyRate_eq`. Budget filtering is done entirely client-side.
 - Hourly jobs have a rate range (min–max), not a single value. `hourlyBudgetMin` and `hourlyBudgetMax` are separate fields. Budget filter uses overlap logic: job is kept if its rate range intersects with the filter range.
 - If more than 10 matching jobs are posted between syncs, the extras are permanently missed (no historical fetch possible). Mitigation: sync frequently via cron-job.org.
-- Upwork type-level GraphQL introspection is restricted — `__type(name: "...")` returns null for most types. Only `__schema { types { name } }` works to list type names.
+- Upwork GraphQL introspection works, including type-level `__type(name: "...")` (confirmed 2026-08-06 — used to introspect `CreateJobProposalInput`, `MarketplaceProposalRequirements`, etc.). An earlier note claimed `__type(name:)` was restricted/returned null; that was inaccurate.
 
 ### Sync infrastructure
 
