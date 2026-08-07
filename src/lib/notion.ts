@@ -1,4 +1,19 @@
 import { Client } from "@notionhq/client";
+import { withRetry } from "@/lib/retry";
+
+// Retrying wrappers around raw Notion API calls — transient 429/5xx back off and retry.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function notionRequest(notion: Client, args: any): Promise<any> {
+  return withRetry(() => notion.request(args), { label: "notion.request" });
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function notionUpdate(notion: Client, args: any) {
+  return withRetry(() => notion.pages.update(args), { label: "notion.pages.update" });
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function notionCreate(notion: Client, args: any) {
+  return withRetry(() => notion.pages.create(args), { label: "notion.pages.create" });
+}
 
 let _notion: Client | null = null;
 
@@ -146,7 +161,7 @@ function buildJobFeedProps(item: JobFeedItem): Record<string, any> {
 
 async function findPageByExternalId(notion: Client, dbId: string, externalId: string, propName = "External ID"): Promise<string | null> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const resp: any = await notion.request({
+  const resp: any = await notionRequest(notion, {
     path: `databases/${dbId}/query`,
     method: "post",
     body: { filter: { property: propName, rich_text: { equals: externalId } } },
@@ -173,7 +188,7 @@ export async function fetchJobFeedPageMap(
   for (let i = 0; i < externalIds.length; i += 100) {
     const batch = externalIds.slice(i, i + 100);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const resp: any = await notion.request({
+    const resp: any = await notionRequest(notion, {
       path: `databases/${dbId}/query`,
       method: "post",
       body: {
@@ -200,10 +215,10 @@ export async function upsertJobFeedItem(
   const existingId = opts?.pageMap?.get(item.externalId)
     ?? await findPageByExternalId(notion, dbId, item.externalId);
   if (existingId) {
-    await notion.pages.update({ page_id: existingId, properties: props as any });
+    await notionUpdate(notion, { page_id: existingId, properties: props as any });
     return "updated";
   }
-  await notion.pages.create({ parent: { database_id: dbId }, properties: props as any });
+  await notionCreate(notion, { parent: { database_id: dbId }, properties: props as any });
   opts?.pageMap?.set(item.externalId, "pending");
   return "created";
 }
@@ -221,7 +236,7 @@ export async function pruneJobFeed(
   let cursor: string | undefined;
   outer: do {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const resp: any = await notion.request({
+    const resp: any = await notionRequest(notion, {
       path: `databases/${dbId}/query`,
       method: "post",
       body: {
@@ -242,7 +257,7 @@ export async function pruneJobFeed(
 
   for (const id of toArchive) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await notion.pages.update({ page_id: id, archived: true } as any);
+    await notionUpdate(notion, { page_id: id, archived: true } as any);
   }
   return toArchive.length;
 }
@@ -289,7 +304,7 @@ export async function fetchDiaryPageMap(
   let cursor: string | undefined;
   do {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const resp: any = await notion.request({
+    const resp: any = await notionRequest(notion, {
       path: `databases/${dbId}/query`,
       method: "post",
       body: {
@@ -323,10 +338,10 @@ export async function upsertContractDayItem(
   const existingId = opts?.pageMap?.get(item.externalId)
     ?? await findPageByExternalId(notion, dbId, item.externalId, "ID");
   if (existingId) {
-    await notion.pages.update({ page_id: existingId, properties: props as any });
+    await notionUpdate(notion, { page_id: existingId, properties: props as any });
     return "updated";
   }
-  await notion.pages.create({ parent: { database_id: dbId }, properties: props as any });
+  await notionCreate(notion, { parent: { database_id: dbId }, properties: props as any });
   // Add to map so subsequent items in same run don't re-create
   opts?.pageMap?.set(item.externalId, "pending");
   return "created";
