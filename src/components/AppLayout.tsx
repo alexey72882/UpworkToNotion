@@ -42,6 +42,18 @@ const NAV = [
       </svg>
     ),
   },
+  {
+    label: "MCP Server",
+    href: "/mcp",
+    disabled: false,
+    icon: (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" strokeLinejoin="round" strokeLinecap="round" strokeWidth="2" fill="none" stroke="currentColor" className="inline-block size-5">
+        <path d="M12 2a2 2 0 0 0-2 2v6a2 2 0 0 0 4 0V4a2 2 0 0 0-2-2z"/>
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+        <path d="M12 19v3"/>
+      </svg>
+    ),
+  },
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
