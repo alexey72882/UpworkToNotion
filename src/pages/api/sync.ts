@@ -1,18 +1,11 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { upsertJobFeedItem, upsertContractDayItem, fetchJobFeedPageMap, fetchDiaryPageMap, pruneJobFeed, getNotionForUser } from "@/lib/notion";
-import { fetchUpworkItems, fetchJobFeed, fetchContractDays, getCurrentWeekRange } from "@/lib/upwork";
-import { webFilterToJobFilters } from "@/lib/webFilter";
-import { getValidAccessToken } from "@/lib/upworkToken";
+import { runUserSync, type UserResult, type UserSyncSummary } from "@/lib/syncPipeline";
 import { getSupabase } from "@/lib/supabase";
 import { getSupabaseServer } from "@/lib/supabaseServer";
 import { requireAuth } from "@/lib/requireAuth";
 import { logger } from "@/lib/logger";
 
 export const config = { runtime: "nodejs" };
-
-type UserResult = {
-  fetched: number; created: number; updated: number; skipped: number;
-};
 
 type Ok = {
   ok: true;
@@ -24,149 +17,15 @@ type Ok = {
 
 type Err = { ok: false; error: string };
 
-const PROPOSALS_INTERVAL_MS = 60 * 60 * 1000;   // 1 hour
-const DIARY_INTERVAL_MS    = 10 * 60 * 1000;   // 10 minutes
-const PRUNE_INTERVAL_MS    = 24 * 60 * 60 * 1000; // 1 day
-const JOB_FEED_CAP         = 1000;              // max rows kept in the job feed DB
-const PRUNE_MAX_PER_RUN    = 50;               // bound archives/run to stay under timeout
-
-type UserSettings = {
-  user_id: string;
-  notion_token: string;
-  job_feed_db_id: string | null;
-  diary_db_id: string | null;
-  upwork_person_id: string | null;
-  upwork_name: string | null;
-  total_jobs_created: number | null;
-  total_diary_synced: number | null;
-  web_filter: unknown | null;
-  last_proposals_sync_at: string | null;
-  last_diary_sync_at: string | null;
-  last_prune_at: string | null;
-  last_sync_at: string | null;
-};
-
-async function syncUser(settings: UserSettings, force?: string) {
-  const notion = getNotionForUser(settings.notion_token);
-  const token = await getValidAccessToken(settings.user_id);
-  if (!token) {
-    logger.warn({ userId: settings.user_id }, "no Upwork token for user, skipping");
-    return null;
-  }
-
-  // One-time: fetch and save first name if missing
-  if (!settings.upwork_name) {
-    try {
-      const meRes = await fetch("https://api.upwork.com/graphql", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ query: "{ user { name } }" }),
-      });
-      const me = await meRes.json();
-      const firstName = String(me?.data?.user?.name ?? "").split(/\s+/)[0];
-      if (firstName) {
-        await getSupabase().from("user_settings").update({ upwork_name: firstName }).eq("user_id", settings.user_id);
-      }
-    } catch (err) {
-      logger.warn({ err }, "Could not fetch Upwork name");
-    }
-  }
-
-  const now = Date.now();
-  const shouldFetchProposals = force === "proposals" || !settings.last_proposals_sync_at ||
-    now - new Date(settings.last_proposals_sync_at).getTime() >= PROPOSALS_INTERVAL_MS;
-  const shouldFetchDiary = force === "diary" || !settings.last_diary_sync_at ||
-    now - new Date(settings.last_diary_sync_at).getTime() >= DIARY_INTERVAL_MS;
-
-  logger.info({ shouldFetchProposals, shouldFetchDiary }, "sync track decisions");
-
-  const { rangeStart, rangeEnd } = getCurrentWeekRange();
-  const [proposals, jobItems, contractItems] = await Promise.all([
-    shouldFetchProposals ? fetchUpworkItems(token) : Promise.resolve([]),
-    fetchJobFeed(webFilterToJobFilters(settings.web_filter as never), token),
-    shouldFetchDiary && settings.diary_db_id
-      ? fetchContractDays(rangeStart, rangeEnd, token, settings.upwork_person_id ?? undefined)
-      : Promise.resolve([]),
-  ]);
-
-  // Cross-reference: map jobPostingId → proposal URL
-  const proposalByJobId = new Map<string, string>();
-  for (const p of proposals) {
-    if (p.url) {
-      const jobId = p.url.split("/jobs/").pop();
-      if (jobId) proposalByJobId.set(jobId, p.externalId);
-    }
-  }
-  for (const item of jobItems) {
-    const jobId = item.externalId.replace("job-", "");
-    const proposalId = proposalByJobId.get(jobId);
-    if (proposalId) item.proposalUrl = `https://www.upwork.com/ab/proposals/${proposalId}`;
-  }
-
-  let jobCreated = 0, jobUpdated = 0, jobSkipped = 0, jobsError: string | null = null;
-  const recentJobs: { title: string; action: "created" | "updated" | "skipped" }[] = jobItems.map(i => ({ title: i.title, action: "skipped" as const }));
-  if (jobItems.length > 0 && settings.job_feed_db_id) {
-    try {
-      const jobPageMap = await fetchJobFeedPageMap(jobItems.map(i => i.externalId), { notion, dbId: settings.job_feed_db_id });
-      for (let i = 0; i < jobItems.length; i++) {
-        const item = jobItems[i];
-        try {
-          const result = await upsertJobFeedItem(item, { notion, dbId: settings.job_feed_db_id, pageMap: jobPageMap });
-          if (result === "created") jobCreated++; else jobUpdated++;
-          recentJobs[i].action = result;
-        } catch (err) {
-          jobSkipped++;
-          logger.warn({ externalId: item.externalId, err }, "job upsert failed, skipping");
-        }
-      }
-    } catch (err) {
-      jobsError = err instanceof Error ? err.message : String(err);
-      jobSkipped = jobItems.length;
-      logger.error({ err }, "job feed Notion error — DB may be disconnected");
-    }
-  }
-
-  // Cap the job-feed DB. Prune daily, or immediately after a run that created jobs
-  // (the only way to exceed the cap). While still draining a backlog we hit the
-  // per-run limit, so we hold off advancing the daily clock until we've caught up.
-  let pruned = 0;
-  let pruneClockAdvanced = false;
-  const shouldPrune = force === "prune" || jobCreated > 0 || !settings.last_prune_at ||
-    now - new Date(settings.last_prune_at).getTime() >= PRUNE_INTERVAL_MS;
-  if (shouldPrune && settings.job_feed_db_id) {
-    try {
-      pruned = await pruneJobFeed({ notion, dbId: settings.job_feed_db_id, keep: JOB_FEED_CAP, max: PRUNE_MAX_PER_RUN });
-      pruneClockAdvanced = pruned < PRUNE_MAX_PER_RUN;
-      logger.info({ pruned, caughtUp: pruneClockAdvanced }, "job feed pruned");
-    } catch (err) {
-      logger.error({ err }, "job feed prune failed");
-    }
-  }
-
-  let contractCreated = 0, contractUpdated = 0, contractSkipped = 0;
-  if (contractItems.length > 0 && settings.diary_db_id) {
-    const pageMap = await fetchDiaryPageMap(rangeStart, rangeEnd, { notion, dbId: settings.diary_db_id });
-    for (const item of contractItems) {
-      try {
-        const result = await upsertContractDayItem(item, { notion, dbId: settings.diary_db_id, pageMap });
-        if (result === "created") contractCreated++; else contractUpdated++;
-      } catch (err) {
-        contractSkipped++;
-        logger.warn({ externalId: item.externalId, err }, "contract upsert failed, skipping");
-      }
-    }
-  }
-
-  return {
-    jobs: { fetched: jobItems.length, created: jobCreated, updated: jobUpdated, skipped: jobSkipped, recentJobs, error: jobsError },
-    contracts: { fetched: contractItems.length, created: contractCreated, updated: contractUpdated, skipped: contractSkipped },
-    proposalsSynced: shouldFetchProposals,
-    diarySynced: shouldFetchDiary,
-    pruned,
-    pruneClockAdvanced,
-  };
+function addInto(total: UserResult, r: UserResult) {
+  total.fetched += r.fetched;
+  total.created += r.created;
+  total.updated += r.updated;
+  total.skipped += r.skipped;
 }
 
+// Dispatcher: fires one /api/sync-user call per user in parallel so each runs in its
+// own function instance/timeout, instead of syncing all users in this one 60s function.
 export default async function handler(req: NextApiRequest, res: NextApiResponse<Ok | Err>) {
   if (req.method !== "GET") {
     res.setHeader("Allow", "GET");
@@ -175,103 +34,56 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
   const force = typeof req.query.force === "string" ? req.query.force : undefined;
   const start = Date.now();
-  logger.info("sync started");
+  logger.info("sync dispatch started");
 
   try {
-    let userIds: string[];
-
-    // GitHub Actions / cron path: Bearer API_SECRET → sync all users
-    if (requireAuth(req, res, { silent: true })) {
-      const { data: rows } = await getSupabase()
-        .from("user_settings")
-        .select("user_id")
-        .not("notion_token", "is", null);
-      userIds = (rows ?? []).map((r: { user_id: string }) => r.user_id);
-    } else {
-      // Dashboard "Sync Now": derive user from session
+    // Dashboard "Sync Now" (session): sync just that user inline — no fan-out needed.
+    if (!requireAuth(req, res, { silent: true })) {
       const supabase = getSupabaseServer(req, res);
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return res.status(401).json({ ok: false, error: "Unauthorized" });
-      userIds = [user.id];
+      const s = await runUserSync(user.id, force);
+      return res.status(200).json({ ok: true, users: 1, jobs: s.jobs, contracts: s.contracts, durationMs: Date.now() - start });
     }
 
-    logger.info({ userCount: userIds.length }, "syncing users");
+    // Cron path (Bearer API_SECRET): fan out one call per user.
+    const { data: rows } = await getSupabase()
+      .from("user_settings")
+      .select("user_id")
+      .not("notion_token", "is", null);
+    const userIds = (rows ?? []).map((r: { user_id: string }) => r.user_id);
+    logger.info({ userCount: userIds.length }, "dispatching per-user syncs");
+
+    const proto = (req.headers["x-forwarded-proto"] as string) ?? "http";
+    const base = `${proto}://${req.headers.host}`;
+    const secret = process.env.API_SECRET;
+
+    const settled = await Promise.allSettled(
+      userIds.map(userId =>
+        fetch(`${base}/api/sync-user`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ userId, force }),
+        }).then(r => r.json() as Promise<UserSyncSummary | Err>),
+      ),
+    );
 
     const totals = { jobs: { fetched: 0, created: 0, updated: 0, skipped: 0 }, contracts: { fetched: 0, created: 0, updated: 0, skipped: 0 } };
-
-    for (const userId of userIds) {
-      const { data: settings } = await getSupabase()
-        .from("user_settings")
-        .select("*")
-        .eq("user_id", userId)
-        .maybeSingle<UserSettings>();
-
-      if (!settings?.notion_token) {
-        logger.warn({ userId }, "user has no notion settings, skipping");
-        continue;
+    for (const s of settled) {
+      if (s.status === "fulfilled" && s.value.ok) {
+        addInto(totals.jobs, s.value.jobs);
+        addInto(totals.contracts, s.value.contracts);
+      } else {
+        logger.error({ reason: s.status === "rejected" ? s.reason : s.value }, "per-user sync failed");
       }
-
-      let result: Awaited<ReturnType<typeof syncUser>> = null;
-      let syncError: string | null = null;
-      try {
-        result = await syncUser(settings, force);
-      } catch (err) {
-        syncError = err instanceof Error ? err.message : String(err);
-        logger.error({ userId, err }, "user sync failed, skipping");
-      }
-
-      if (result) {
-        totals.jobs.fetched += result.jobs.fetched;
-        totals.jobs.created += result.jobs.created;
-        totals.jobs.updated += result.jobs.updated;
-        totals.jobs.skipped += result.jobs.skipped;
-        totals.contracts.fetched += result.contracts.fetched;
-        totals.contracts.created += result.contracts.created;
-        totals.contracts.updated += result.contracts.updated;
-        totals.contracts.skipped += result.contracts.skipped;
-      }
-
-      const userDurationMs = Date.now() - start;
-      await getSupabase().from("sync_logs").insert({
-        user_id: userId,
-        jobs_fetched: result?.jobs.fetched ?? 0,
-        jobs_created: result?.jobs.created ?? 0,
-        jobs_updated: result?.jobs.updated ?? 0,
-        jobs_skipped: result?.jobs.skipped ?? 0,
-        contracts_fetched: result?.contracts.fetched ?? 0,
-        contracts_created: result?.contracts.created ?? 0,
-        contracts_updated: result?.contracts.updated ?? 0,
-        contracts_skipped: result?.contracts.skipped ?? 0,
-        proposals_synced: result?.proposalsSynced ?? false,
-        diary_synced: result?.diarySynced ?? false,
-        duration_ms: userDurationMs,
-        error: syncError ?? (result === null ? "no_token" : null),
-      });
-
-      const now = new Date().toISOString();
-      await getSupabase()
-        .from("user_settings")
-        .update({
-          prev_sync_at: settings.last_sync_at,
-          last_sync_at: now,
-          last_sync_result: result ? { jobs: result.jobs, contracts: result.contracts } : null,
-          total_jobs_created: (settings.total_jobs_created ?? 0) + (result?.jobs.created ?? 0),
-          total_diary_synced: (settings.total_diary_synced ?? 0) + (result?.contracts.fetched ?? 0),
-          updated_at: now,
-          ...(result?.proposalsSynced && { last_proposals_sync_at: now }),
-          ...(result?.diarySynced && { last_diary_sync_at: now }),
-          ...(result?.pruneClockAdvanced && { last_prune_at: now }),
-        })
-        .eq("user_id", userId);
     }
 
     const durationMs = Date.now() - start;
-    logger.info({ ...totals, durationMs }, "sync completed");
-
+    logger.info({ ...totals, durationMs }, "sync dispatch completed");
     return res.status(200).json({ ok: true, users: userIds.length, ...totals, durationMs });
   } catch (err) {
     const message = err instanceof Error ? err.message : typeof err === "string" ? err : "Unknown error";
-    logger.error({ err }, "sync failed");
+    logger.error({ err }, "sync dispatch failed");
     return res.status(500).json({ ok: false, error: message });
   }
 }
