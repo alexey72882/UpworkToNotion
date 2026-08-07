@@ -3,7 +3,6 @@ import { useRouter } from "next/router";
 import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
 import AppLayout from "@/components/AppLayout";
 
-const CALLBACK_URL = process.env.NEXT_PUBLIC_UPWORK_REDIRECT_URI ?? "https://upwork-to-notion.vercel.app/api/upwork/callback";
 const UPWORK_INSTRUCTIONS_URL = "https://www.upwork.com/developer/keys/new";
 const NOTION_INSTRUCTIONS_URL = "https://www.notion.so/my-integrations";
 
@@ -14,6 +13,7 @@ type Settings = {
   upwork_person_id?: string;
   upwork_client_id?: string;
   upwork_client_secret?: string;
+  upwork_redirect_uri?: string;
 };
 
 type Tab = "upwork" | "notion";
@@ -73,6 +73,14 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false);
   const [upworkConnected, setUpworkConnected] = useState(false);
   const [notionConnected, setNotionConnected] = useState(false);
+  const [fetchingCb, setFetchingCb] = useState(false);
+
+  async function getCallbackUrl() {
+    setFetchingCb(true);
+    const d = await fetch("/api/user/callback-url", { method: "POST" }).then((r) => r.json());
+    setFetchingCb(false);
+    if (d.ok) setForm((f) => ({ ...f, upwork_redirect_uri: d.redirectUri }));
+  }
 
   useEffect(() => {
     fetch("/api/user/settings")
@@ -231,9 +239,16 @@ export default function SettingsPage() {
                     <label className="label py-1 px-0"><span className="label-text text-sm">Client secret</span></label>
                     <input type="password" placeholder="••••••••" className="input input-bordered w-full" {...field("upwork_client_secret")} />
                   </div>
-                  <div className="text-xs text-base-content/40 space-y-1">
-                    <p>Set this as your OAuth Callback URL:</p>
-                    <code className="block bg-base-200 px-3 py-1.5 rounded break-all">{CALLBACK_URL}</code>
+                  <div className="text-xs text-base-content/60 space-y-2">
+                    <p>Set this as your OAuth Callback URL in your Upwork app:</p>
+                    {form.upwork_redirect_uri ? (
+                      <code className="block bg-base-200 px-3 py-1.5 rounded break-all">{form.upwork_redirect_uri}</code>
+                    ) : (
+                      <button type="button" onClick={getCallbackUrl} disabled={fetchingCb} className="btn btn-sm btn-outline">
+                        {fetchingCb && <span className="loading loading-spinner loading-xs" />}
+                        {fetchingCb ? "Getting…" : "Get my callback URL"}
+                      </button>
+                    )}
                   </div>
                 </div>
 
