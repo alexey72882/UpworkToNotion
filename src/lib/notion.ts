@@ -189,6 +189,27 @@ export async function setJobScreeningQuestions(
   return true;
 }
 
+// Mark a job page as applied after a successful proposal submission. Returns
+// false if no page matches (submission still succeeded — caller decides).
+export async function markApplied(
+  notion: Client,
+  externalId: string,
+  proposalUrl: string,
+  opts?: { dbId?: string },
+): Promise<boolean> {
+  const dbId = opts?.dbId ?? getDbId("NOTION_JOB_FEED_DATABASE_ID");
+  const pageId = await findPageByExternalId(notion, dbId, externalId);
+  if (!pageId) return false;
+  await notionUpdate(notion, {
+    page_id: pageId,
+    properties: {
+      "Applied": { checkbox: true },
+      "Proposal link": { url: proposalUrl },
+    },
+  });
+  return true;
+}
+
 // Fetch existing job-feed pages for only the External IDs seen this run, as a map
 // of externalId → pageId. Prevents duplicates from Notion eventual-consistency lag
 // under concurrent syncs. Queries by an `or` of the exact IDs so cost is O(run size),
