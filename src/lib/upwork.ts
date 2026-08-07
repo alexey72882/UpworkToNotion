@@ -135,6 +135,57 @@ async function gqlFetch(token: string, query: string) {
   }, { label: "upwork.gqlFetch" });
 }
 
+export type ProposalInput = {
+  personId: string;   // selectedContractor.id (user.id snowflake)
+  nid: string;        // selectedContractor.oDeskUserID (username)
+  orgId: string;      // teamOrgId
+  jobReference: string; // numeric job id
+  chargedAmount: number;
+  coverLetter: string;
+  questions?: { question: string; answer: string }[];
+};
+
+// Submit a proposal via createJobProposal. NOT retried — this spends Connects and
+// is irreversible; retrying a maybe-succeeded mutation risks a double-application.
+export async function submitJobProposal(token: string, input: ProposalInput): Promise<{ newProposalId: string; status?: string; error?: string }> {
+  const query = `mutation Submit($input: CreateJobProposalInput!) {
+    createJobProposal(input: $input) { newProposalId status error }
+  }`;
+  const variables = {
+    input: {
+      selectedContractor: { id: input.personId, oDeskUserID: input.nid },
+      jobReference: input.jobReference,
+      chargedAmount: input.chargedAmount,
+      coverLetter: input.coverLetter,
+      teamOrgId: input.orgId,
+      ...(input.questions?.length ? { questions: input.questions } : {}),
+    },
+  };
+  const response = await fetch("https://api.upwork.com/graphql", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      "User-Agent": "notion-to-upwork/1.0 (+vercel)",
+    },
+    body: JSON.stringify({ query, variables }),
+  });
+  const text = await response.text();
+  if (!response.ok) {
+    throw new Error(`Upwork GraphQL HTTP ${response.status}: ${text.slice(0, 300)}`);
+  }
+  const json = JSON.parse(text);
+  if (json?.errors?.length) {
+    throw new Error(json.errors[0]?.message ?? "createJobProposal error");
+  }
+  const result = json?.data?.createJobProposal;
+  if (!result?.newProposalId) {
+    throw new Error(result?.error ?? "createJobProposal returned no proposal id");
+  }
+  return result;
+}
+
 export type JobScreening = {
   coverLetterRequired: boolean;
   questions: { question: string; sequenceNumber: number }[];
