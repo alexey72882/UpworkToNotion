@@ -170,6 +170,25 @@ async function findPageByExternalId(notion: Client, dbId: string, externalId: st
   return null;
 }
 
+// Write a job's screening questions into its Job Feed page for the human to
+// answer. Writes only the `Screening Questions` property (outside buildJobFeedProps,
+// so the periodic sync never clobbers it). Returns false if no page matches.
+export async function setJobScreeningQuestions(
+  notion: Client,
+  externalId: string,
+  questionsText: string,
+  opts?: { dbId?: string },
+): Promise<boolean> {
+  const dbId = opts?.dbId ?? getDbId("NOTION_JOB_FEED_DATABASE_ID");
+  const pageId = await findPageByExternalId(notion, dbId, externalId);
+  if (!pageId) return false;
+  await notionUpdate(notion, {
+    page_id: pageId,
+    properties: { "Screening Questions": { rich_text: [{ text: { content: questionsText.slice(0, 2000) } }] } },
+  });
+  return true;
+}
+
 // Fetch existing job-feed pages for only the External IDs seen this run, as a map
 // of externalId → pageId. Prevents duplicates from Notion eventual-consistency lag
 // under concurrent syncs. Queries by an `or` of the exact IDs so cost is O(run size),

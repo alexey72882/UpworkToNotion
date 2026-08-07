@@ -135,6 +135,30 @@ async function gqlFetch(token: string, query: string) {
   }, { label: "upwork.gqlFetch" });
 }
 
+export type JobScreening = {
+  coverLetterRequired: boolean;
+  questions: { question: string; sequenceNumber: number }[];
+};
+
+// Fetch a single job's screening questions (read-only). `numericId` is the
+// numeric Upwork job id (from `job-<numeric>` External ID) — ciphertext 404s.
+export async function fetchJobScreening(numericId: string, accessToken?: string): Promise<JobScreening> {
+  const token = accessToken ?? await getValidAccessToken();
+  if (!token) throw new Error("No valid Upwork access token");
+  const query = `{ marketplaceJobPosting(id: "${numericId}") { contractorSelection { proposalRequirement { coverLetterRequired screeningQuestions { question sequenceNumber } } } } }`;
+  const json = await gqlFetch(token, query);
+  const posting = json?.data?.marketplaceJobPosting;
+  if (!posting) throw new Error("job not found");
+  const pr = posting.contractorSelection?.proposalRequirement;
+  return {
+    coverLetterRequired: !!pr?.coverLetterRequired,
+    questions: (pr?.screeningQuestions ?? []).map((q: any) => ({
+      question: String(q.question),
+      sequenceNumber: Number(q.sequenceNumber),
+    })),
+  };
+}
+
 export async function fetchUpworkItems(accessToken?: string): Promise<UpworkItem[]> {
   const token = accessToken ?? await getValidAccessToken();
   if (!token) throw new Error("No valid Upwork access token");
