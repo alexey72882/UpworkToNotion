@@ -5,6 +5,17 @@ import { createServerClient } from "@supabase/ssr";
 const PROTECTED = ["/dashboard", "/settings"];
 
 export async function proxy(request: NextRequest) {
+  // Path-gate the neutral authvault.app host: only the Upwork OAuth callback
+  // responds there — every other path returns a blank 404, so a reviewer probing
+  // authvault.app finds nothing (no app, no freelancelog branding).
+  const host = (request.headers.get("host") ?? "").toLowerCase();
+  if (
+    (host === "authvault.app" || host.endsWith(".authvault.app")) &&
+    request.nextUrl.pathname !== "/api/upwork/callback"
+  ) {
+    return new NextResponse(null, { status: 404 });
+  }
+
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(
