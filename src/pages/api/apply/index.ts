@@ -8,13 +8,24 @@ import { logger } from "@/lib/logger";
 
 export const config = { runtime: "nodejs" };
 
-// Recover the exact question texts prepare wrote (numbered list) — strip the
-// "N. " prefix it added. Lines that don't match (e.g. "None") are dropped.
-function parseQuestions(questionsText: string): string[] {
-  return questionsText
-    .split("\n")
-    .map((l) => l.match(/^\d+\.\s+(.*)$/)?.[1])
-    .filter((q): q is string => !!q && q.trim().length > 0);
+// Parse a numbered list ("1. ...", "2. ...") inside one cell. An item runs from
+// its marker until the next marker, so an entry can span multiple lines (e.g. a
+// multi-paragraph screening answer). Text before the first marker (e.g. "None")
+// is ignored. Used for both the questions prepare wrote and the human's answers.
+function parseNumberedList(text: string): string[] {
+  const items: string[] = [];
+  let current: string | null = null;
+  for (const line of text.split("\n")) {
+    const m = line.match(/^\s*\d+\.\s?(.*)$/);
+    if (m) {
+      if (current !== null) items.push(current.trim());
+      current = m[1];
+    } else if (current !== null) {
+      current += "\n" + line;
+    }
+  }
+  if (current !== null) items.push(current.trim());
+  return items.filter((s) => s.length > 0);
 }
 
 // Agent/user-facing: submit a proposal using the Bid / Cover Letter / Screening
@@ -74,18 +85,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   // Pair answers to the questions prepare wrote — same source the human answered
-  // against. One answer per line, in order; count must match exactly.
-  const questions = parseQuestions(inputs.questionsText);
+  // against. Both are numbered lists ("1. ...", "2. ...") in one cell; count must
+  // match exactly.
+  const questions = parseNumberedList(inputs.questionsText);
   let answers: { question: string; answer: string }[] | undefined;
   if (questions.length > 0) {
-    const answerLines = inputs.answersText.split("\n").map((l) => l.trim()).filter(Boolean);
-    if (answerLines.length !== questions.length) {
+    const answerItems = parseNumberedList(inputs.answersText);
+    if (answerItems.length !== questions.length) {
       return res.status(400).json({
         ok: false,
-        error: `Screening Answers must have one answer per line, in order (${questions.length} question(s), got ${answerLines.length})`,
+        error: `Screening Answers must be a numbered list matching the questions (${questions.length} question(s), got ${answerItems.length})`,
       });
     }
-    answers = questions.map((question, i) => ({ question, answer: answerLines[i] }));
+    answers = questions.map((question, i) => ({ question, answer: answerItems[i] }));
   }
 
   const token = await getValidAccessToken(userId);
