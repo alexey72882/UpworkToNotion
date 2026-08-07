@@ -130,6 +130,10 @@ Jobs fetched from Upwork marketplace matching your filters. App writes here.
 | `Proposal link` | URL | Link to your proposal (when Applied = true) |
 | `Upwork Link` | URL | Job posting URL |
 | `Created` | Date | Published date |
+| `Screening Questions` | Rich text | Written by `/api/apply/prepare` (numbered list, or `None`) |
+| `Screening Answers` | Rich text | User/agent fills — numbered list matching the questions |
+| `Bid` | Number | User/agent fills — hourly rate or fixed total for the proposal |
+| `Cover Letter` | Rich text | User/agent fills — proposal cover letter |
 
 #### 2. Job Feed Filters (`NOTION_JOB_FILTERS_DATABASE_ID`) — NO LONGER USED
 

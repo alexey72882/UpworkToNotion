@@ -51,7 +51,7 @@ mutation {
     jobReference: "<numeric_job_id>"  # node.id from marketplaceJobPostingsSearch — NOT ciphertext
     chargedAmount: 50.0               # hourly rate or fixed bid
     coverLetter: "..."
-    teamOrgId: "540749103848333313"   # organization.id from vendorProposals — NOT user.id
+    teamOrgId: "540749103848333313"   # organization.id (see gotchas below) — NOT user.id
   }) { newProposalId status error }
 }
 ```
@@ -60,13 +60,25 @@ The example above shows the required fields. The full `CreateJobProposalInput` (
 
 Key gotchas confirmed by testing:
 - `oDeskUserID` = `nid` (username string `"alexkievua"`), NOT the numeric `rid` (`"6890346"`)
-- `teamOrgId` = org ID `540749103848333313` (fetched via `vendorProposals { organization { id } }`), NOT user ID
+- `teamOrgId` = org ID `540749103848333313`, NOT user ID. **Fetch via top-level `organization { id }`** — the previously-used `vendorProposals { organization { id } }` path is now oauth-scope-blocked (`VendorProposalsConnection.organization` → "not enough oauth2 permissions"). `companySelector { items { title organizationId } }` also works and lists all orgs (Alexey has 2: personal `540749103848333313` + "WEB 2B" agency `723127517184872448`); top-level `organization { id }` returns the personal one.
 - `jobReference` = numeric `id` from job search (e.g. `"2084364540816197571"`), NOT ciphertext (`~02...`)
 - Permissions include "Grants access to submit proposal to jobs" — write access is confirmed working
 
 **Screening questions (confirmed live 2026-08-06, read-only — no proposal submitted):**
 - Fetch a single job's screening questions via `marketplaceJobPosting(id: "<numeric_id>")` → `contractorSelection { proposalRequirement { coverLetterRequired screeningQuestions { question sequenceNumber } } }`. `id` must be the **numeric** job id (same as `jobReference`); ciphertext `~02...` returns 404. `screeningQuestions` is `[]` when the job has none.
 - Submit answers back via the `questions: [{ question, answer }]` field on `createJobProposal`.
+
+### 0003 proposal submission — implementation (shipped 2026-08-07)
+
+Full apply flow is live end-to-end. Identity values (`upwork_nid`, `upwork_org_id`, `upwork_person_id`) are captured at the OAuth callback (`{ user { id name nid } organization { id } }`) and stored in `user_settings`.
+
+**Endpoints** (`src/lib/apply.ts` holds shared `runPrepare`/`runSubmit`; HTTP routes + MCP tools both use them):
+- `POST /api/apply/prepare` `{ externalId, userId? }` — fetches screening questions, writes them to the Notion row's `Screening Questions` property. Read-only vs Upwork.
+- `POST /api/apply` `{ externalId, userId }` — submits the proposal, marks the row `Applied` + `Proposal link`. Spends Connects; `userId` required (never inferred); `createJobProposal` NOT retried (double-application risk); `markApplied` best-effort.
+
+**Model B — values live on the Notion Job Feed row** (both the user and the Notion agent can write them). Added properties: `Bid` (number), `Cover Letter` (rich text), `Screening Answers` (rich text), plus `Screening Questions` (rich text, written by prepare). Submit reads them. Fails closed on blank/≤0 Bid, blank Cover Letter, or answer-count ≠ question-count. Questions/answers are parsed as a **numbered list inside one cell** (`1. …`, item runs until the next `N.` marker → multi-line answers OK); questions come from the `Screening Questions` cell prepare wrote, NOT a re-fetch (keeps answers aligned to what the human saw).
+
+**MCP server** (`src/pages/api/mcp.ts`) — lets a Notion Custom Agent drive the flow. Live at **`https://freelancelog.com/api/mcp`** (prod custom domain). Tools: `prepare_application`, `submit_proposal`. Auth: per-user `mcp_token` (bearer, `user_settings.mcp_token`) → resolves userId; server built **per request** (not a module singleton — that would cross-wire users). Stateless `@modelcontextprotocol/sdk` v1.30.0 `StreamableHTTPServerTransport` works in a Pages Router route: keep Next bodyParser on, pass `req.body` to `transport.handleRequest(req, res, req.body)`. Notion requires **Business/Enterprise** plan + admin enabling custom MCP servers. Token managed at the `/mcp` page (`POST /api/user/mcp-token`).
 
 ### Dedup — bulk page map pattern
 
