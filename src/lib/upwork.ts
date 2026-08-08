@@ -156,6 +156,9 @@ export async function submitJobProposal(token: string, input: ProposalInput): Pr
       selectedContractor: { id: input.personId, oDeskUserID: input.nid },
       jobReference: input.jobReference,
       chargedAmount: input.chargedAmount,
+      // coverLetter is String! (NON_NULL) in CreateJobProposalInput — must always
+      // be sent, never omitted like `questions`. When the job doesn't require one
+      // (coverLetterRequired: false) we send "" as the schema-valid "no cover letter".
       coverLetter: input.coverLetter,
       teamOrgId: input.orgId,
       ...(input.questions?.length ? { questions: input.questions } : {}),
