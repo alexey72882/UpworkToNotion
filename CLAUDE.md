@@ -134,6 +134,17 @@ Jobs fetched from Upwork marketplace matching your filters. App writes here.
 | `Screening Answers` | Rich text | User/agent fills — numbered list matching the questions |
 | `Bid` | Number | User/agent fills — hourly rate or fixed total for the proposal |
 | `Cover Letter` | Rich text | User/agent fills — proposal cover letter |
+| `Client Rating` | Number | Client feedback score (`client.totalFeedback`, e.g. 4.8; 0 = no reviews) |
+| `Client Reviews` | Number | Number of client reviews (`client.totalReviews`) |
+| `Client Spent` | Number | Client total spent, USD (`client.totalSpent`) |
+| `Client Hires` | Number | Client total hires (`client.totalHires`) |
+| `Applicants` | Number | Total applicants on the job (`totalApplicants`) |
+| `Skills` | Multi-select | Required skills (`skills.prettyName`) |
+| `Preferred Location` | Rich text | Preferred freelancer location, if set |
+| `Location Required` | Checkbox | True if the preferred location is mandatory |
+| `Enterprise` | Checkbox | Enterprise job flag |
+
+> The `Client Rating`…`Enterprise` rows above are written straight from the free feed-search fields (no extra Upwork call). **They must be added as columns in each user's Job Feed DB** with the exact names/types above, or the upsert fails with a Notion "property does not exist" error.
 
 #### 2. Job Feed Filters (`NOTION_JOB_FILTERS_DATABASE_ID`) — NO LONGER USED
 

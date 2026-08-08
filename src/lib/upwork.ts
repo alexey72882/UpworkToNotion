@@ -293,6 +293,15 @@ export type JobFeedResult = {
   projectLength?: string;
   workload?: string;
   paymentVerified?: boolean;
+  clientRating?: number;
+  clientReviews?: number;
+  clientSpent?: number;
+  clientHires?: number;
+  applicants?: number;
+  skills?: string[];
+  preferredLocation?: string;
+  locationRequired?: boolean;
+  enterprise?: boolean;
   applied: boolean;
   proposalUrl?: string;
 };
@@ -464,6 +473,19 @@ function mapJobFeedNode(node: any): JobFeedResult {
     projectLength: node.durationLabel ?? undefined,
     workload: node.engagement ?? undefined,
     paymentVerified: node.client?.verificationStatus === "VERIFIED",
+    clientRating: node.client?.totalFeedback ?? undefined,
+    clientReviews: node.client?.totalReviews ?? undefined,
+    clientSpent: node.client?.totalSpent?.rawValue !== undefined ? Number(node.client.totalSpent.rawValue) : undefined,
+    clientHires: node.client?.totalHires ?? undefined,
+    applicants: node.totalApplicants ?? undefined,
+    skills: Array.isArray(node.skills)
+      ? node.skills.map((s: any) => s.prettyName?.replace(/,/g, "")).filter(Boolean)
+      : undefined,
+    preferredLocation: Array.isArray(node.preferredFreelancerLocation)
+      ? node.preferredFreelancerLocation.join(", ") || undefined
+      : node.preferredFreelancerLocation ?? undefined,
+    locationRequired: node.preferredFreelancerLocationMandatory ?? undefined,
+    enterprise: node.enterprise ?? undefined,
     applied: node.applied === true,
   };
 }
@@ -500,7 +522,19 @@ export async function fetchJobFeed(filters: JobFilter[], accessToken?: string): 
         experienceLevel
         durationLabel
         engagement
-        client { verificationStatus location { country } }
+        totalApplicants
+        enterprise
+        preferredFreelancerLocation
+        preferredFreelancerLocationMandatory
+        skills { prettyName }
+        client {
+          verificationStatus
+          location { country }
+          totalFeedback
+          totalReviews
+          totalHires
+          totalSpent { rawValue }
+        }
         applied
       }
     }

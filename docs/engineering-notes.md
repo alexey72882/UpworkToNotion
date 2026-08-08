@@ -68,6 +68,18 @@ Key gotchas confirmed by testing:
 - Fetch a single job's screening questions via `marketplaceJobPosting(id: "<numeric_id>")` → `contractorSelection { proposalRequirement { coverLetterRequired screeningQuestions { question sequenceNumber } } }`. `id` must be the **numeric** job id (same as `jobReference`); ciphertext `~02...` returns 404. `screeningQuestions` is `[]` when the job has none.
 - Submit answers back via the `questions: [{ question, answer }]` field on `createJobProposal`.
 
+**Job-feed search node — free client & job fields (confirmed live 2026-08-08 via introspection + live query):**
+
+The feed query's node type is `MarketplaceJobPostingSearchResult` (`marketplaceJobPostingsSearch → …Connection → …Edge → node`). Everything below rides along with the **existing feed query — no extra API call**. The current query (`src/lib/upwork.ts` ~line 485) only requests a subset.
+
+- **Client stats are available on the search node's `client` field** (type `MarketplaceJobPostingSearchClientInfo`) — this corrects an earlier assumption that client quality data was tier-blocked. The block only applies to the *detail* endpoint's client objects (`marketplaceJobPosting.ownership.company` → `403 view_client_company` denied; `clientCompanyPublic` has no stats). The **search** node's `client` is open and exposes:
+  - `totalFeedback` (Float — the feedback score, e.g. `4.62`), `totalReviews`, `totalHires`, `totalPostedJobs`, `totalSpent { rawValue currency }`, `verificationStatus`, `location`, `lastContractTitle`, `hasFinancialPrivacy`, + org ids. All `0`/null for brand-new clients (genuine, not blocked).
+  - `totalSpent` looks accurate on re-check (live values up to ~$746K observed); low-per-hire samples (e.g. 462 hires / $15K) are just low-spend clients, not a bug. Value is `Money.rawValue` (string) → parse to Number.
+  - **Not available:** avg hourly rate paid and total hours are NOT on this object (UI computes avg = hourly-spend ÷ hours-billed, hours-weighted). Only derivable proxy is `totalSpent ÷ totalHires` = $/hire.
+- **Other free node fields (live-confirmed returning data):** `skills { name prettyName }` (required skills), `totalApplicants` (competition — free here; needs a per-job call at the detail endpoint; returned `0` on fresh jobs, verify it populates on busy ones), `category`/`subcategory` (slugs), `engagementDuration { label }` (structured duration), `weeklyBudget`, `hourlyBudgetType`, `preferredFreelancerLocation` + `…Mandatory`, `premium`/`enterprise`, `freelancersToHire`, `renewedDateTime` (set when reposted), `freelancerClientRelation` (prior relationship, null if none).
+- **Scope-blocked on the search node:** `occupations.occupationLabel` → `403`.
+- **Net effect:** client quality, competition, skills, and location requirements are all Gate-1 free (filter before writing to Notion). The only per-job detail call still needed is **screening questions**.
+
 ### 0003 proposal submission — implementation (shipped 2026-08-07)
 
 Full apply flow is live end-to-end. Identity values (`upwork_nid`, `upwork_org_id`, `upwork_person_id`) are captured at the OAuth callback (`{ user { id name nid } organization { id } }`) and stored in `user_settings`.

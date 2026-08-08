@@ -130,6 +130,15 @@ export type JobFeedItem = {
   projectLength?: string;
   workload?: string;
   paymentVerified?: boolean;
+  clientRating?: number;
+  clientReviews?: number;
+  clientSpent?: number;
+  clientHires?: number;
+  applicants?: number;
+  skills?: string[];
+  preferredLocation?: string;
+  locationRequired?: boolean;
+  enterprise?: boolean;
   applied?: boolean;
   proposalUrl?: string;
 };
@@ -154,6 +163,16 @@ function buildJobFeedProps(item: JobFeedItem): Record<string, any> {
   if (item.projectLength) props["Project Length"] = { select: { name: item.projectLength } };
   if (item.workload) props["Workload"] = { select: { name: item.workload } };
   if (item.paymentVerified !== undefined) props["Payment Verified"] = { checkbox: item.paymentVerified };
+  if (item.clientRating !== undefined) props["Client Rating"] = { number: item.clientRating };
+  if (item.clientReviews !== undefined) props["Client Reviews"] = { number: item.clientReviews };
+  if (item.clientSpent !== undefined) props["Client Spent"] = { number: item.clientSpent };
+  if (item.clientHires !== undefined) props["Client Hires"] = { number: item.clientHires };
+  if (item.applicants !== undefined) props["Applicants"] = { number: item.applicants };
+  if (item.skills?.length) props["Skills"] = { multi_select: item.skills.map((name) => ({ name })) };
+  if (item.preferredLocation)
+    props["Preferred Location"] = { rich_text: [{ text: { content: item.preferredLocation } }] };
+  if (item.locationRequired !== undefined) props["Location Required"] = { checkbox: item.locationRequired };
+  if (item.enterprise !== undefined) props["Enterprise"] = { checkbox: item.enterprise };
   if (item.applied !== undefined) props["Applied"] = { checkbox: item.applied };
   if (item.proposalUrl) props["Proposal link"] = { url: item.proposalUrl };
   return props;
