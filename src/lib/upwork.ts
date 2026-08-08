@@ -210,6 +210,15 @@ export async function fetchJobScreening(numericId: string, accessToken?: string)
   };
 }
 
+// Format screening questions into the exact numbered-list cell the apply flow
+// expects: `1. …`, one per line, or "None". Shared by `runPrepare` and the feed
+// sync so both write byte-identical text (submit parses it back to match answers).
+export function formatScreeningQuestions(questions: { question: string; sequenceNumber: number }[]): string {
+  return questions.length
+    ? questions.map((q) => `${q.sequenceNumber + 1}. ${q.question}`).join("\n")
+    : "None";
+}
+
 export async function fetchUpworkItems(accessToken?: string): Promise<UpworkItem[]> {
   const token = accessToken ?? await getValidAccessToken();
   if (!token) throw new Error("No valid Upwork access token");
@@ -302,6 +311,7 @@ export type JobFeedResult = {
   preferredLocation?: string;
   locationRequired?: boolean;
   enterprise?: boolean;
+  screeningQuestions?: string;
   applied: boolean;
   proposalUrl?: string;
 };
@@ -486,6 +496,14 @@ function mapJobFeedNode(node: any): JobFeedResult {
       : node.preferredFreelancerLocation ?? undefined,
     locationRequired: node.preferredFreelancerLocationMandatory ?? undefined,
     enterprise: node.enterprise ?? undefined,
+    screeningQuestions: node.job?.contractorSelection?.proposalRequirement
+      ? formatScreeningQuestions(
+          (node.job.contractorSelection.proposalRequirement.screeningQuestions ?? []).map((q: any) => ({
+            question: String(q.question),
+            sequenceNumber: Number(q.sequenceNumber),
+          })),
+        )
+      : undefined,
     applied: node.applied === true,
   };
 }
@@ -527,6 +545,13 @@ export async function fetchJobFeed(filters: JobFilter[], accessToken?: string): 
         preferredFreelancerLocation
         preferredFreelancerLocationMandatory
         skills { prettyName }
+        job {
+          contractorSelection {
+            proposalRequirement {
+              screeningQuestions { question sequenceNumber }
+            }
+          }
+        }
         client {
           verificationStatus
           location { country }

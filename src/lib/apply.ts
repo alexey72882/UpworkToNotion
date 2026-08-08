@@ -1,6 +1,6 @@
 import { getSupabase } from "@/lib/supabase";
 import { getNotionForUser, setJobScreeningQuestions, readJobApplyInputs, markApplied, getDbId } from "@/lib/notion";
-import { fetchJobScreening, submitJobProposal } from "@/lib/upwork";
+import { fetchJobScreening, submitJobProposal, formatScreeningQuestions } from "@/lib/upwork";
 import { getValidAccessToken } from "@/lib/upworkToken";
 import { logger } from "@/lib/logger";
 
@@ -64,9 +64,7 @@ export async function runPrepare(userId: string, externalId: string): Promise<Pr
     return err("upstream", e instanceof Error ? e.message : String(e));
   }
 
-  const questionsText = screening.questions.length
-    ? screening.questions.map((q) => `${q.sequenceNumber + 1}. ${q.question}`).join("\n")
-    : "None";
+  const questionsText = formatScreeningQuestions(screening.questions);
 
   const notion = getNotionForUser(settings.notion_token);
   const dbId = settings.job_feed_db_id ?? getDbId("NOTION_JOB_FEED_DATABASE_ID");

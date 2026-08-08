@@ -139,6 +139,7 @@ export type JobFeedItem = {
   preferredLocation?: string;
   locationRequired?: boolean;
   enterprise?: boolean;
+  screeningQuestions?: string;
   applied?: boolean;
   proposalUrl?: string;
 };
@@ -173,6 +174,8 @@ function buildJobFeedProps(item: JobFeedItem): Record<string, any> {
     props["Preferred Location"] = { rich_text: [{ text: { content: item.preferredLocation } }] };
   if (item.locationRequired !== undefined) props["Location Required"] = { checkbox: item.locationRequired };
   if (item.enterprise !== undefined) props["Enterprise"] = { checkbox: item.enterprise };
+  if (item.screeningQuestions !== undefined)
+    props["Screening Questions"] = { rich_text: [{ text: { content: item.screeningQuestions.slice(0, 2000) } }] };
   if (item.applied !== undefined) props["Applied"] = { checkbox: item.applied };
   if (item.proposalUrl) props["Proposal link"] = { url: item.proposalUrl };
   return props;
