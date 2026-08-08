@@ -33,10 +33,15 @@ export async function assignCallback(userId: string): Promise<string | null> {
       .maybeSingle();
 
     if (claimed?.redirect_uri) {
+      // Upsert (not update) — a brand-new user has no user_settings row yet, and a
+      // plain update would silently no-op, losing the assignment (and double-claiming
+      // on the next click).
       await db
         .from("user_settings")
-        .update({ upwork_redirect_uri: claimed.redirect_uri, updated_at: new Date().toISOString() })
-        .eq("user_id", userId);
+        .upsert(
+          { user_id: userId, upwork_redirect_uri: claimed.redirect_uri, updated_at: new Date().toISOString() },
+          { onConflict: "user_id" },
+        );
       return claimed.redirect_uri;
     }
     // lost the race — retry once
