@@ -140,6 +140,7 @@ export type JobFeedItem = {
   locationRequired?: boolean;
   enterprise?: boolean;
   screeningQuestions?: string;
+  coverLetterRequired?: boolean;
   applied?: boolean;
   proposalUrl?: string;
 };
@@ -176,6 +177,7 @@ function buildJobFeedProps(item: JobFeedItem): Record<string, any> {
   if (item.enterprise !== undefined) props["Enterprise"] = { checkbox: item.enterprise };
   if (item.screeningQuestions !== undefined)
     props["Screening Questions"] = { rich_text: [{ text: { content: item.screeningQuestions.slice(0, 2000) } }] };
+  if (item.coverLetterRequired !== undefined) props["Cover Letter Required"] = { checkbox: item.coverLetterRequired };
   if (item.applied !== undefined) props["Applied"] = { checkbox: item.applied };
   if (item.proposalUrl) props["Proposal link"] = { url: item.proposalUrl };
   return props;
@@ -220,6 +222,7 @@ export type JobApplyInputs = {
   coverLetter: string;
   questionsText: string;
   answersText: string;
+  coverLetterRequired: boolean;
 };
 export async function readJobApplyInputs(
   notion: Client,
@@ -243,6 +246,8 @@ export async function readJobApplyInputs(
     coverLetter: richText(props["Cover Letter"]),
     questionsText: richText(props["Screening Questions"]),
     answersText: richText(props["Screening Answers"]),
+    // Absent column → undefined → default true (require a cover letter, today's behavior).
+    coverLetterRequired: props["Cover Letter Required"]?.checkbox ?? true,
   };
 }
 

@@ -109,7 +109,8 @@ export async function runSubmit(userId: string, externalId: string): Promise<Sub
   if (inputs.bid === null || !Number.isFinite(inputs.bid) || inputs.bid <= 0) {
     return err("bad_request", "set a positive Bid on the job row");
   }
-  if (!inputs.coverLetter.trim()) return err("bad_request", "fill the Cover Letter on the job row");
+  if (!inputs.coverLetter.trim() && inputs.coverLetterRequired)
+    return err("bad_request", "fill the Cover Letter on the job row");
 
   const questions = parseNumberedList(inputs.questionsText);
   let answers: { question: string; answer: string }[] | undefined;

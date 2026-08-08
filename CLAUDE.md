@@ -130,7 +130,7 @@ Jobs fetched from Upwork marketplace matching your filters. App writes here.
 | `Proposal link` | URL | Link to your proposal (when Applied = true) |
 | `Upwork Link` | URL | Job posting URL |
 | `Created` | Date | Published date |
-| `Screening Questions` | Rich text | Written by `/api/apply/prepare` (numbered list, or `None`) |
+| `Screening Questions` | Rich text | Pre-populated by the sync for every job (numbered list, or `None`); also written by `/api/apply/prepare`. Both use `formatScreeningQuestions` for identical formatting |
 | `Screening Answers` | Rich text | User/agent fills — numbered list matching the questions |
 | `Bid` | Number | User/agent fills — hourly rate or fixed total for the proposal |
 | `Cover Letter` | Rich text | User/agent fills — proposal cover letter |
@@ -143,6 +143,7 @@ Jobs fetched from Upwork marketplace matching your filters. App writes here.
 | `Preferred Location` | Rich text | Preferred freelancer location, if set |
 | `Location Required` | Checkbox | True if the preferred location is mandatory |
 | `Enterprise` | Checkbox | Enterprise job flag |
+| `Cover Letter Required` | Checkbox | Whether Upwork requires a cover letter; when false, `submit` allows a blank Cover Letter (~10% of jobs, usually ones with screening questions) |
 
 > The `Client Rating`…`Enterprise` rows above are written straight from the free feed-search fields (no extra Upwork call). **They must be added as columns in each user's Job Feed DB** with the exact names/types above, or the upsert fails with a Notion "property does not exist" error.
 

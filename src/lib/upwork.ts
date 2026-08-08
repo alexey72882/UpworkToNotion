@@ -312,6 +312,7 @@ export type JobFeedResult = {
   locationRequired?: boolean;
   enterprise?: boolean;
   screeningQuestions?: string;
+  coverLetterRequired?: boolean;
   applied: boolean;
   proposalUrl?: string;
 };
@@ -504,6 +505,7 @@ function mapJobFeedNode(node: any): JobFeedResult {
           })),
         )
       : undefined,
+    coverLetterRequired: node.job?.contractorSelection?.proposalRequirement?.coverLetterRequired ?? undefined,
     applied: node.applied === true,
   };
 }
@@ -548,6 +550,7 @@ export async function fetchJobFeed(filters: JobFilter[], accessToken?: string): 
         job {
           contractorSelection {
             proposalRequirement {
+              coverLetterRequired
               screeningQuestions { question sequenceNumber }
             }
           }
