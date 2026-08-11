@@ -3,6 +3,11 @@
   themes: light --default;
 }
 
+/* Scale the root so text-sm labels read 16px (16 / 0.875 ≈ 18.3px).
+   The marketing homepage opts out via .landing-page to keep its 16px base. */
+html { font-size: 114.3%; }
+html:has(.landing-page) { font-size: 100%; }
+
 .tooltip::before {
   white-space: pre-line;
   text-align: left;
