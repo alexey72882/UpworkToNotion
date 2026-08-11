@@ -202,6 +202,7 @@ npx vercel --prod
 | `UPWORK_PERSON_ID` | Freelancer's numeric Upwork user ID — used by `fetchContractDays()` to query work diary |
 | `LOG_LEVEL` | Pino log level (default: `info`) |
 | `API_SECRET` | Auth for protected API routes (`Authorization: Bearer <secret>`) |
+| `ADMIN_EMAILS` | Comma-separated allowlist of operator emails for `GET /api/admin/health` (read-only cross-user status). Unset = no admins. |
 
 ## Testing after changes
 
