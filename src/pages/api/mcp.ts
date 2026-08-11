@@ -3,7 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
 import { resolveUserByMcpToken } from "@/lib/mcpToken";
-import { runPrepare, runSubmit } from "@/lib/apply";
+import { runSubmit } from "@/lib/apply";
 
 export const config = { runtime: "nodejs" };
 
@@ -25,27 +25,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const server = new McpServer({ name: "freelancelog", version: "0.1.0" });
 
   server.registerTool(
-    "prepare_application",
-    {
-      description:
-        "Fetch a job's Upwork screening questions and write them into its Notion row's 'Screening Questions' property so they can be answered before applying. Read-only — does not submit anything. Input: externalId like 'job-<numeric>' (the job's External ID in the Job Feed).",
-      inputSchema: { externalId: z.string().describe("Job External ID, e.g. 'job-2085739682157729814'") },
-    },
-    async ({ externalId }) => {
-      const r = await runPrepare(userId, externalId);
-      if (!r.ok) return { content: [{ type: "text", text: `Error: ${r.error}` }], isError: true };
-      const qs = r.questions.length
-        ? r.questions.map((q) => `${q.sequenceNumber + 1}. ${q.question}`).join("\n")
-        : "None";
-      return { content: [{ type: "text", text: `Prepared ${externalId}. Cover letter required: ${r.coverLetterRequired}.\nScreening questions:\n${qs}` }] };
-    },
-  );
-
-  server.registerTool(
     "submit_proposal",
     {
       description:
-        "SUBMIT A REAL PROPOSAL to Upwork for this job. This spends Connects and cannot be undone. Reads Bid, Cover Letter, and Screening Answers from the job's Notion row — fill those in first (run prepare_application to load the questions). Fails if the Bid or Cover Letter is empty, or if the number of Screening Answers doesn't match the questions. Input: externalId like 'job-<numeric>'.",
+        "SUBMIT A REAL PROPOSAL to Upwork for this job. This spends Connects and cannot be undone. Reads Bid, Cover Letter, and Screening Answers from the job's Notion row — fill those in first. The row's 'Screening Questions' are pre-populated by the sync; answer them in 'Screening Answers'. Fails if the Bid or Cover Letter is empty, or if the number of Screening Answers doesn't match the questions. Input: externalId like 'job-<numeric>'.",
       inputSchema: { externalId: z.string().describe("Job External ID, e.g. 'job-2085739682157729814'") },
     },
     async ({ externalId }) => {
