@@ -120,7 +120,7 @@ export default function McpPage() {
                   <li>Workspace admin: Settings → Connections → enable <b>Custom MCP servers</b>.</li>
                   <li>Open your Custom Agent → Settings → <b>Tools &amp; Access</b> → <b>Custom MCP server</b>.</li>
                   <li>Paste the <b>Server URL</b> above and the <b>Auth token</b> as a Bearer token.</li>
-                  <li>Enable the <code>prepare_application</code> and <code>submit_proposal</code> tools.</li>
+                  <li>Enable the <code>submit_proposal</code> tool.</li>
                 </ol>
                 <p className="text-xs text-base-content/50 mt-2">
                   <b>submit_proposal</b> spends Upwork Connects and can&apos;t be undone. Fill Bid, Cover Letter, and Screening Answers on the job row first.
