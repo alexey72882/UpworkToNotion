@@ -195,7 +195,7 @@ async function findPageByExternalId(notion: Client, dbId: string, externalId: st
 }
 
 // Read the apply inputs a human/agent filled on a job page: the bid, cover
-// letter, the questions prepare wrote, and the answers. `Screening Questions` /
+// letter, the questions the sync wrote, and the answers. `Screening Questions` /
 // `Screening Answers` are returned as raw plain text for the caller to pair.
 // Returns null if no page matches.
 export type JobApplyInputs = {

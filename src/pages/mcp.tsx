@@ -58,7 +58,7 @@ export default function McpPage() {
         <div>
           <h1 className="text-2xl font-bold">MCP Server</h1>
           <p className="text-base-content/60 mt-1">
-            Connect your Notion Custom Agent so it can prepare and submit Upwork proposals for you.
+            Connect your Notion Custom Agent so it can submit Upwork proposals for you.
           </p>
         </div>
 
