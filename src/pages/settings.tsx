@@ -5,6 +5,8 @@ import AppLayout from "@/components/AppLayout";
 
 const UPWORK_INSTRUCTIONS_URL = "https://www.upwork.com/developer/keys/new";
 const NOTION_INSTRUCTIONS_URL = "https://www.notion.so/my-integrations";
+const APP_DESCRIPTION =
+  "Freelancelog is a personal productivity tool that syncs my Upwork job feed and proposal activity into Notion for tracking and reporting.";
 
 type Settings = {
   notion_token?: string;
@@ -73,13 +75,18 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false);
   const [upworkConnected, setUpworkConnected] = useState(false);
   const [notionConnected, setNotionConnected] = useState(false);
-  const [fetchingCb, setFetchingCb] = useState(false);
+  const [step, setStep] = useState<1 | 2>(1);
+  const [copied, setCopied] = useState<string | null>(null);
 
   async function getCallbackUrl() {
-    setFetchingCb(true);
     const d = await fetch("/api/user/callback-url", { method: "POST" }).then((r) => r.json());
-    setFetchingCb(false);
     if (d.ok) setForm((f) => ({ ...f, upwork_redirect_uri: d.redirectUri }));
+  }
+
+  function copy(text: string, key: string) {
+    navigator.clipboard.writeText(text);
+    setCopied(key);
+    setTimeout(() => setCopied(null), 2000);
   }
 
   useEffect(() => {
@@ -90,6 +97,7 @@ export default function SettingsPage() {
           setForm(d.settings ?? {});
           setUpworkConnected(!!d.settings?.upwork_person_id);
           setNotionConnected(!!(d.settings?.notion_token && d.settings?.job_feed_db_id));
+          if (!d.settings?.upwork_person_id && !d.settings?.upwork_redirect_uri) getCallbackUrl();
         }
         setLoading(false);
       });
@@ -229,34 +237,81 @@ export default function SettingsPage() {
                   <a href={UPWORK_INSTRUCTIONS_URL} target="_blank" rel="noreferrer" className="btn btn-sm">Go to instructions</a>
                 </div>
 
-                {/* Fields */}
-                <div className="space-y-4 mb-6">
-                  <div>
-                    <label className="label py-1 px-0"><span className="label-text text-sm">Client key</span></label>
-                    <input type="text" placeholder="e.g. abc123xyz_client_key" className="input input-bordered w-full" {...field("upwork_client_id")} />
-                  </div>
-                  <div>
-                    <label className="label py-1 px-0"><span className="label-text text-sm">Client secret</span></label>
-                    <input type="password" placeholder="••••••••" className="input input-bordered w-full" {...field("upwork_client_secret")} />
-                  </div>
-                  <div className="text-xs text-base-content/60 space-y-2">
-                    <p>Set this as your OAuth Callback URL in your Upwork app:</p>
-                    {form.upwork_redirect_uri ? (
-                      <code className="block bg-base-200 px-3 py-1.5 rounded break-all">{form.upwork_redirect_uri}</code>
-                    ) : (
-                      <button type="button" onClick={getCallbackUrl} disabled={fetchingCb} className="btn btn-sm btn-outline">
-                        {fetchingCb && <span className="loading loading-spinner loading-xs" />}
-                        {fetchingCb ? "Getting…" : "Get my callback URL"}
-                      </button>
-                    )}
-                  </div>
-                </div>
+                {step === 1 ? (
+                  <>
+                    <span className="badge badge-soft badge-primary mb-3">STEP 1</span>
+                    <h3 className="text-lg font-bold mb-1">Prepare your API key application</h3>
+                    <p className="text-sm text-base-content/60 mb-6">
+                      Copy this URL and set it as your OAuth Callback URL when you create your app in the Upwork Developer Portal.
+                    </p>
 
-                {/* Actions */}
-                <button type="button" onClick={saveAndConnect} disabled={saving} className="btn btn-block btn-soft btn-primary">
-                  {saving && <span className="loading loading-spinner loading-xs" />}
-                  {saving ? "Connecting…" : "Save & Connect"}
-                </button>
+                    {/* OAuth callback URL */}
+                    <div className="mb-6">
+                      <label className="label py-1 px-0"><span className="label-text text-sm">OAuth callback URL</span></label>
+                      <div className="flex gap-2">
+                        <code className="flex-1 min-w-0 bg-base-200 px-3 py-2.5 rounded-lg truncate">{form.upwork_redirect_uri || "Getting your callback URL…"}</code>
+                        <button
+                          type="button"
+                          onClick={() => form.upwork_redirect_uri && copy(form.upwork_redirect_uri, "url")}
+                          disabled={!form.upwork_redirect_uri}
+                          className="btn btn-outline"
+                        >
+                          {copied === "url" ? "Copied ✓" : "Copy"}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Application description */}
+                    <div className="mb-6">
+                      <label className="label py-1 px-0"><span className="label-text text-sm">Application description</span></label>
+                      <p className="text-xs text-base-content/60 mb-2">Pre-written for you based on your project. Paste this into Upwork&apos;s application form.</p>
+                      <div className="flex gap-2 items-start">
+                        <div className="flex-1 min-w-0 bg-base-200 px-3 py-2.5 rounded-lg text-sm">{APP_DESCRIPTION}</div>
+                        <button type="button" onClick={() => copy(APP_DESCRIPTION, "desc")} className="btn btn-outline">
+                          {copied === "desc" ? "Copied ✓" : "Copy"}
+                        </button>
+                      </div>
+                    </div>
+
+                    <a href={UPWORK_INSTRUCTIONS_URL} target="_blank" rel="noreferrer" className="link link-primary inline-flex items-center gap-2 mb-6">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                      </svg>
+                      Go to Upwork Developer Portal
+                    </a>
+
+                    <button type="button" onClick={() => setStep(2)} className="btn btn-block btn-soft btn-primary">
+                      Continue →
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span className="badge badge-soft badge-primary mb-3">STEP 2</span>
+                    <h3 className="text-lg font-bold mb-1">Connect your API</h3>
+                    <p className="text-sm text-base-content/60 mb-6">Paste the credentials from the app you just created in Upwork.</p>
+
+                    <div className="space-y-4 mb-6">
+                      <div>
+                        <label className="label py-1 px-0"><span className="label-text text-sm">Client key</span></label>
+                        <input type="text" placeholder="e.g. abc123xyz_client_key" className="input input-bordered w-full" {...field("upwork_client_id")} />
+                        <p className="text-xs text-base-content/60 mt-1">Find this on your app&apos;s page in the Upwork Developer Portal.</p>
+                      </div>
+                      <div>
+                        <label className="label py-1 px-0"><span className="label-text text-sm">Client secret</span></label>
+                        <input type="password" placeholder="••••••••" className="input input-bordered w-full" {...field("upwork_client_secret")} />
+                        <p className="text-xs text-base-content/60 mt-1">Kept private, never shown again after saving.</p>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-3">
+                      <button type="button" onClick={() => setStep(1)} className="btn btn-outline">← Back</button>
+                      <button type="button" onClick={saveAndConnect} disabled={saving} className="btn btn-soft btn-primary flex-1">
+                        {saving && <span className="loading loading-spinner loading-xs" />}
+                        {saving ? "Connecting…" : "Save & Connect"}
+                      </button>
+                    </div>
+                  </>
+                )}
               </>
             )}
           </div>
