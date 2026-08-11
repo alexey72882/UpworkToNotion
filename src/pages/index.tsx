@@ -20,7 +20,7 @@ const steps = [
 export default function Landing() {
   const [menuOpen, setMenuOpen] = useState(false);
   return (
-    <div style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+    <div className="landing-page" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
 
       {/* Navbar */}
       <nav style={{ background: "#F5F7FF" }}>
