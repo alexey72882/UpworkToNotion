@@ -1,18 +1,14 @@
 import { getSupabase } from "@/lib/supabase";
-import { getNotionForUser, setJobScreeningQuestions, readJobApplyInputs, markApplied, getDbId } from "@/lib/notion";
-import { fetchJobScreening, submitJobProposal, formatScreeningQuestions } from "@/lib/upwork";
+import { getNotionForUser, readJobApplyInputs, markApplied, getDbId } from "@/lib/notion";
+import { submitJobProposal } from "@/lib/upwork";
 import { getValidAccessToken } from "@/lib/upworkToken";
 import { logger } from "@/lib/logger";
 
-// Shared apply logic used by both the HTTP routes and the MCP tools. Returns a
+// Shared apply logic used by both the HTTP route and the MCP tool. Returns a
 // typed result so each caller maps `code` to its own transport (HTTP status /
 // MCP tool error) without losing the fail-closed granularity.
 export type ApplyErrorCode = "bad_request" | "not_found" | "unauthorized" | "upstream";
 export type ApplyError = { ok: false; code: ApplyErrorCode; error: string };
-
-export type PrepareResult =
-  | { ok: true; externalId: string; coverLetterRequired: boolean; questions: { question: string; sequenceNumber: number }[] }
-  | ApplyError;
 
 export type SubmitResult =
   | { ok: true; proposalId: string; proposalUrl: string; notionUpdated: boolean }
@@ -40,47 +36,6 @@ function parseNumberedList(text: string): string[] {
   }
   if (current !== null) items.push(current.trim());
   return items.filter((s) => s.length > 0);
-}
-
-// Enrich a Job Feed page with the job's screening questions. Read-only vs Upwork.
-export async function runPrepare(userId: string, externalId: string): Promise<PrepareResult> {
-  const numericId = parseExternalId(externalId);
-  if (!numericId) return err("bad_request", "externalId must be 'job-<numeric>'");
-
-  const { data: settings } = await getSupabase()
-    .from("user_settings")
-    .select("notion_token, job_feed_db_id")
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (!settings?.notion_token) return err("bad_request", "user has no Notion token");
-
-  const token = await getValidAccessToken(userId);
-  if (!token) return err("unauthorized", "no Upwork token");
-
-  let screening;
-  try {
-    screening = await fetchJobScreening(numericId, token);
-  } catch (e) {
-    return err("upstream", e instanceof Error ? e.message : String(e));
-  }
-
-  const questionsText = formatScreeningQuestions(screening.questions);
-
-  const notion = getNotionForUser(settings.notion_token);
-  const dbId = settings.job_feed_db_id ?? getDbId("NOTION_JOB_FEED_DATABASE_ID");
-  let found: boolean;
-  try {
-    found = await setJobScreeningQuestions(notion, externalId, questionsText, { dbId });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    if (/Screening Questions|property/i.test(msg)) {
-      return err("bad_request", "Add a 'Screening Questions' rich-text property to the Job Feed DB first");
-    }
-    return err("upstream", msg);
-  }
-  if (!found) return err("not_found", "job page not found in Notion");
-
-  return { ok: true, externalId, coverLetterRequired: screening.coverLetterRequired, questions: screening.questions };
 }
 
 // Submit a proposal using the Bid / Cover Letter / Screening Answers the human or

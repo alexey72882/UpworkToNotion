@@ -189,33 +189,9 @@ export async function submitJobProposal(token: string, input: ProposalInput): Pr
   return result;
 }
 
-export type JobScreening = {
-  coverLetterRequired: boolean;
-  questions: { question: string; sequenceNumber: number }[];
-};
-
-// Fetch a single job's screening questions (read-only). `numericId` is the
-// numeric Upwork job id (from `job-<numeric>` External ID) — ciphertext 404s.
-export async function fetchJobScreening(numericId: string, accessToken?: string): Promise<JobScreening> {
-  const token = accessToken ?? await getValidAccessToken();
-  if (!token) throw new Error("No valid Upwork access token");
-  const query = `{ marketplaceJobPosting(id: "${numericId}") { contractorSelection { proposalRequirement { coverLetterRequired screeningQuestions { question sequenceNumber } } } } }`;
-  const json = await gqlFetch(token, query);
-  const posting = json?.data?.marketplaceJobPosting;
-  if (!posting) throw new Error("job not found");
-  const pr = posting.contractorSelection?.proposalRequirement;
-  return {
-    coverLetterRequired: !!pr?.coverLetterRequired,
-    questions: (pr?.screeningQuestions ?? []).map((q: any) => ({
-      question: String(q.question),
-      sequenceNumber: Number(q.sequenceNumber),
-    })),
-  };
-}
-
 // Format screening questions into the exact numbered-list cell the apply flow
-// expects: `1. …`, one per line, or "None". Shared by `runPrepare` and the feed
-// sync so both write byte-identical text (submit parses it back to match answers).
+// expects: `1. …`, one per line, or "None". Written by the feed sync; submit
+// parses it back to match answers, so the format must stay byte-stable.
 export function formatScreeningQuestions(questions: { question: string; sequenceNumber: number }[]): string {
   return questions.length
     ? questions.map((q) => `${q.sequenceNumber + 1}. ${q.question}`).join("\n")
