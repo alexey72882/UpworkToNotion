@@ -272,10 +272,33 @@ export async function markApplied(
   return true;
 }
 
+// Count how many apply-inputs a job page has filled (Applied, Cover Letter, Screening
+// Answers, Bid). Used to pick which duplicate to keep so we never archive the copy a
+// user actually worked on — a later duplicate can hold more of their edits than the
+// earliest one.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function applyDataScore(props: any): number {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const hasText = (p: any) => (p?.rich_text ?? []).some((r: any) => r.plain_text?.trim());
+  return (props?.["Applied"]?.checkbox ? 1 : 0)
+    + (hasText(props?.["Cover Letter"]) ? 1 : 0)
+    + (hasText(props?.["Screening Answers"]) ? 1 : 0)
+    + (props?.["Bid"]?.number != null ? 1 : 0);
+}
+
 // Fetch existing job-feed pages for only the External IDs seen this run, as a map
 // of externalId → pageId. Prevents duplicates from Notion eventual-consistency lag
 // under concurrent syncs. Queries by an `or` of the exact IDs so cost is O(run size),
 // not O(total DB) — the previous full-DB scan grew unbounded (see specs/0002).
+//
+// Self-healing: if an External ID already has >1 page (a duplicate slipped in from a
+// prior concurrent race), keep the copy with the most apply-data filled (tie broken by
+// earliest-created) and archive the rest, then map the ID to that survivor. Keeping the
+// richest copy avoids archiving a page the user filled in. Without this the map would
+// arbitrarily pick one copy and leave the others to be re-updated forever. Note we MUST
+// page through the filtered results (a batch of 100 IDs can match >100 rows once
+// duplicates exist) — stopping at the first page is what let duplicates silently
+// self-amplify each run.
 export async function fetchJobFeedPageMap(
   externalIds: string[],
   opts?: { notion?: Client; dbId?: string }
@@ -285,22 +308,42 @@ export async function fetchJobFeedPageMap(
   const map = new Map<string, string>();
   if (externalIds.length === 0) return map;
 
+  // Collect every page per External ID (there may be more than one — a duplicate).
+  const pagesById = new Map<string, { pageId: string; created: string; score: number }[]>();
+
   // Notion caps compound filters at 100 conditions; batch to stay under it.
-  // External ID is unique, so each batch matches ≤100 rows → one page, no cursor.
   for (let i = 0; i < externalIds.length; i += 100) {
     const batch = externalIds.slice(i, i + 100);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const resp: any = await notionRequest(notion, {
-      path: `databases/${dbId}/query`,
-      method: "post",
-      body: {
-        filter: { or: batch.map(id => ({ property: "External ID", rich_text: { equals: id } })) },
-        page_size: 100,
-      },
-    });
-    for (const page of resp?.results ?? []) {
-      const id: string = page.properties?.["External ID"]?.rich_text?.[0]?.plain_text;
-      if (id) map.set(id, page.id);
+    let cursor: string | undefined;
+    do {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const resp: any = await notionRequest(notion, {
+        path: `databases/${dbId}/query`,
+        method: "post",
+        body: {
+          filter: { or: batch.map(id => ({ property: "External ID", rich_text: { equals: id } })) },
+          page_size: 100,
+          ...(cursor ? { start_cursor: cursor } : {}),
+        },
+      });
+      for (const page of resp?.results ?? []) {
+        const id: string = page.properties?.["External ID"]?.rich_text?.[0]?.plain_text;
+        if (!id) continue;
+        const arr = pagesById.get(id) ?? [];
+        arr.push({ pageId: page.id, created: page.created_time, score: applyDataScore(page.properties) });
+        pagesById.set(id, arr);
+      }
+      cursor = resp?.has_more ? resp.next_cursor : undefined;
+    } while (cursor);
+  }
+
+  for (const [id, pages] of pagesById) {
+    // Survivor = most apply-data filled, tie-broken by earliest created. Archive the rest.
+    pages.sort((a, b) => b.score - a.score || a.created.localeCompare(b.created));
+    map.set(id, pages[0].pageId);
+    for (const dup of pages.slice(1)) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await notionUpdate(notion, { page_id: dup.pageId, archived: true } as any);
     }
   }
   return map;

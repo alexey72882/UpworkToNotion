@@ -1,5 +1,80 @@
-import { describe, it, expect } from "vitest";
-import { buildProps, type NotionItem } from "@/lib/notion";
+import { describe, it, expect, vi } from "vitest";
+import { buildProps, fetchJobFeedPageMap, type NotionItem } from "@/lib/notion";
+
+type QueryResp = { results: unknown[]; has_more: boolean; next_cursor?: string };
+
+function page(externalId: string, id: string, created: string, extra: Record<string, unknown> = {}) {
+  return {
+    id,
+    created_time: created,
+    properties: { "External ID": { rich_text: [{ plain_text: externalId }] }, ...extra },
+  };
+}
+
+describe("fetchJobFeedPageMap", () => {
+  it("pages through filtered results past the 100-row limit", async () => {
+    const request = vi
+      .fn()
+      .mockResolvedValueOnce({ results: [page("job-1", "p1", "2026-01-01T00:00:00Z")], has_more: true, next_cursor: "c1" } as QueryResp)
+      .mockResolvedValueOnce({ results: [page("job-2", "p2", "2026-01-01T00:00:00Z")], has_more: false } as QueryResp);
+    const update = vi.fn().mockResolvedValue({});
+    const notion = { request, pages: { update } } as never;
+
+    const map = await fetchJobFeedPageMap(["job-1", "job-2"], { notion, dbId: "db" });
+
+    expect(request).toHaveBeenCalledTimes(2); // followed the cursor
+    expect(map.get("job-1")).toBe("p1");
+    expect(map.get("job-2")).toBe("p2");
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("keeps the earliest-created page and archives duplicates when none are filled", async () => {
+    const request = vi.fn().mockResolvedValue({
+      results: [
+        page("job-1", "newer", "2026-01-02T00:00:00Z"),
+        page("job-1", "oldest", "2026-01-01T00:00:00Z"),
+        page("job-1", "middle", "2026-01-01T12:00:00Z"),
+      ],
+      has_more: false,
+    } as QueryResp);
+    const update = vi.fn().mockResolvedValue({});
+    const notion = { request, pages: { update } } as never;
+
+    const map = await fetchJobFeedPageMap(["job-1"], { notion, dbId: "db" });
+
+    expect(map.get("job-1")).toBe("oldest"); // survivor is earliest created
+    const archived = update.mock.calls.map((c) => c[0]);
+    expect(archived).toEqual(
+      expect.arrayContaining([
+        { page_id: "newer", archived: true },
+        { page_id: "middle", archived: true },
+      ]),
+    );
+    expect(update).toHaveBeenCalledTimes(2); // only the two extras
+  });
+
+  it("keeps the copy with the most apply-data, not the earliest", async () => {
+    const request = vi.fn().mockResolvedValue({
+      results: [
+        page("job-1", "earliest-empty", "2026-01-01T00:00:00Z"),
+        page("job-1", "later-filled", "2026-01-02T00:00:00Z", {
+          Applied: { checkbox: true },
+          "Cover Letter": { rich_text: [{ plain_text: "my letter" }] },
+          Bid: { number: 60 },
+        }),
+      ],
+      has_more: false,
+    } as QueryResp);
+    const update = vi.fn().mockResolvedValue({});
+    const notion = { request, pages: { update } } as never;
+
+    const map = await fetchJobFeedPageMap(["job-1"], { notion, dbId: "db" });
+
+    expect(map.get("job-1")).toBe("later-filled"); // richest survives despite being newer
+    expect(update).toHaveBeenCalledWith({ page_id: "earliest-empty", archived: true });
+    expect(update).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe("buildProps", () => {
   const full: NotionItem = {
