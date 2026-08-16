@@ -8,11 +8,12 @@
 html { font-size: 114.3%; }
 html:has(.landing-page) { font-size: 100%; }
 
-/* daisyUI outlines a .card (2px solid currentColor ≈ black) when it directly
-   contains a checked input — its "selectable card" affordance. We never use
-   that, but during the filters page's load a checked input is transiently a
-   direct child of the card, flashing a black outline. Suppress it. */
-.card:has(> :checked) { outline: none; }
+/* The Filters page swaps a full skeleton subtree for the real content on load;
+   that content's first paint shows one high-contrast frame (dark chips + a dark
+   ring around the card) before styles settle. Fade the content in so the flash
+   frame isn't visible. */
+@keyframes contentFadeIn { from { opacity: 0; } to { opacity: 1; } }
+.content-fade-in { animation: contentFadeIn 0.25s ease-out; }
 
 .tooltip::before {
   white-space: pre-line;
