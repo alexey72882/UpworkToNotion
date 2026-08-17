@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ChevronRight } from "@/components/Chevron";
 import { useState } from "react";
 import Logo from "@/components/Logo";
 
@@ -153,11 +154,15 @@ export default function Landing() {
               padding: "14px 16px",
               letterSpacing: "0.04em",
               textAlign: "center",
-              display: "block",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
               marginTop: 32,
             }}
           >
-            Start for Free →
+            Start for Free
+            <ChevronRight className="h-[1em] w-[1em]" />
           </Link>
         </div>
 
@@ -297,9 +302,10 @@ export default function Landing() {
             <Link
               href="/auth/signup"
               className="cta-btn sm:w-auto w-full"
-              style={{ fontFamily: "'Roboto', sans-serif", fontWeight: 700, fontSize: 18, color: "white", background: PINK, border: `1px solid #EC4899`, borderRadius: 8, padding: "14px 20px", letterSpacing: "0.04em", whiteSpace: "nowrap" as const, display: "block", textAlign: "center" }}
+              style={{ fontFamily: "'Roboto', sans-serif", fontWeight: 700, fontSize: 18, color: "white", background: PINK, border: `1px solid #EC4899`, borderRadius: 8, padding: "14px 20px", letterSpacing: "0.04em", whiteSpace: "nowrap" as const, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, textAlign: "center" }}
             >
-              Create free account →
+              Create free account
+            <ChevronRight className="h-[1em] w-[1em]" />
             </Link>
           </div>
         </div>
@@ -376,11 +382,15 @@ export default function Landing() {
                 borderRadius: 8,
                 padding: "14px 16px",
                 letterSpacing: "0.04em",
-                display: "block",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
                 textAlign: "center",
               }}
             >
-              Start for Free →
+              Start for Free
+              <ChevronRight className="h-[1em] w-[1em]" />
             </Link>
           </div>
         </div>

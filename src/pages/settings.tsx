@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
 import AppLayout from "@/components/AppLayout";
+import { ChevronLeft, ChevronRight } from "@/components/Chevron";
 
 const UPWORK_INSTRUCTIONS_URL = "https://www.upwork.com/developer/keys/new";
 const UPWORK_TUTORIAL_URL = "#"; // TODO: replace with real tutorial URL
@@ -338,7 +339,8 @@ export default function SettingsPage() {
 
                     <div className="flex justify-center">
                       <button type="button" onClick={() => setStep(2)} className="btn btn-primary btn-soft btn-md px-12">
-                        Continue →
+                        Continue
+                        <ChevronRight />
                       </button>
                     </div>
                   </>
@@ -362,7 +364,7 @@ export default function SettingsPage() {
                     </div>
 
                     <div className="flex gap-3 justify-center">
-                      <button type="button" onClick={() => setStep(1)} className="btn btn-outline">← Back</button>
+                      <button type="button" onClick={() => setStep(1)} className="btn btn-outline"><ChevronLeft />Back</button>
                       <button type="button" onClick={saveAndConnect} disabled={saving} className="btn btn-soft btn-primary px-12">
                         {saving && <span className="loading loading-spinner loading-xs" />}
                         {saving ? "Connecting…" : "Save & Connect"}

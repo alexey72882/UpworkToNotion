@@ -127,7 +127,7 @@ export default function McpPage() {
                       <p className="text-base-content/60 text-sm">No token yet — generate one below.</p>
                     </>
                   )}
-                  <div className="mt-4">
+                  <div className="mt-4 flex justify-center">
                     <button
                       className={`btn btn-primary btn-soft btn-md px-12 ${generating ? "btn-disabled" : ""}`}
                       onClick={() => (token ? confirmModalRef.current?.showModal() : generate())}
