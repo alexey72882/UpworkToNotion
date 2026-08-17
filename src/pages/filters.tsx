@@ -124,6 +124,7 @@ export default function FiltersPage() {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: "success" | "info" } | null>(null);
   const [toastVisible, setToastVisible] = useState(false);
+  const toastTimers = useRef<number[]>([]);
   const [loading, setLoading] = useState(true);
   const [advancedDraft, setAdvancedDraft] = useState({ allWords: "", anyWords: "", noneWords: "", exactPhrase: "", titleSearch: "" });
   const advancedModalRef = useRef<HTMLDialogElement>(null);
@@ -192,10 +193,13 @@ export default function FiltersPage() {
   }
 
   function showToast(message: string, type: "success" | "info") {
+    toastTimers.current.forEach(clearTimeout);
     setToast({ message, type });
     setToastVisible(true);
-    setTimeout(() => setToastVisible(false), 3000);
-    setTimeout(() => setToast(null), 3300);
+    toastTimers.current = [
+      window.setTimeout(() => setToastVisible(false), 3000),
+      window.setTimeout(() => setToast(null), 3300),
+    ];
   }
 
   async function applyFilters() {
@@ -722,22 +726,22 @@ export default function FiltersPage() {
       </div>
 
       {/* Toast notification */}
-      <div className={`toast toast-top toast-center transition-opacity duration-300 ${toastVisible ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
-        {toast?.type === "success" ? (
-          <div role="alert" className="alert alert-outline alert-success bg-[color-mix(in_oklch,var(--color-success)_10%,var(--color-base-100))]">
+      <div className={`toast toast-top toast-center ${toastVisible ? "" : "pointer-events-none"}`}>
+        {toast && (toast.type === "success" ? (
+          <div role="alert" className={`alert alert-outline alert-success bg-[color-mix(in_oklch,var(--color-success)_10%,var(--color-base-100))] toast-drop transition-all duration-300 ${toastVisible ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-4"}`}>
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 shrink-0 stroke-current" fill="none" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <span>{toast.message}</span>
           </div>
         ) : (
-          <div role="alert" className="alert alert-outline alert-info bg-[color-mix(in_oklch,var(--color-info)_10%,var(--color-base-100))]">
+          <div role="alert" className={`alert alert-outline alert-info bg-[color-mix(in_oklch,var(--color-info)_10%,var(--color-base-100))] toast-drop transition-all duration-300 ${toastVisible ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-4"}`}>
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 shrink-0 stroke-current" fill="none" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <span>{toast?.message}</span>
+            <span>{toast.message}</span>
           </div>
-        )}
+        ))}
       </div>
     </AppLayout>
   );

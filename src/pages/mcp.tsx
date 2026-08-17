@@ -1,21 +1,32 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import AppLayout from "@/components/AppLayout";
 import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
 
-function CopyIcon() {
+function CopyIcon({ className = "" }: { className?: string }) {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 ${className}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
     </svg>
   );
 }
 
-function CheckIcon() {
+function CheckIcon({ className = "" }: { className?: string }) {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 ${className}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
     </svg>
+  );
+}
+
+// Copy → check with daisyUI's rotate swap; driven by React state, so it uses
+// swap-active rather than the hidden checkbox.
+function CopySwapIcon({ copied }: { copied: boolean }) {
+  return (
+    <span className={`swap swap-rotate ${copied ? "swap-active" : ""}`}>
+      <CheckIcon className="swap-on" />
+      <CopyIcon className="swap-off" />
+    </span>
   );
 }
 
@@ -32,7 +43,7 @@ function CopyField({ label, value, copied, onCopy }: { label: string; value: str
           onClick={onCopy}
           className="btn btn-ghost btn-sm btn-square absolute right-1.5 top-1/2 -translate-y-1/2"
         >
-          {copied ? <CheckIcon /> : <CopyIcon />}
+          <CopySwapIcon copied={copied} />
         </button>
       </div>
     </div>
@@ -48,6 +59,8 @@ export default function McpPage() {
   const [copied, setCopied] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
   const [toastVisible, setToastVisible] = useState(false);
+  const toastTimers = useRef<number[]>([]);
+  const confirmModalRef = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
     setServerUrl(`${window.location.origin}/api/mcp`);
@@ -62,10 +75,13 @@ export default function McpPage() {
   }, []);
 
   function showToast(message: string, type: "success" | "error") {
+    toastTimers.current.forEach(clearTimeout);
     setToast({ message, type });
     setToastVisible(true);
-    setTimeout(() => setToastVisible(false), 3000);
-    setTimeout(() => setToast(null), 3300);
+    toastTimers.current = [
+      window.setTimeout(() => setToastVisible(false), 3000),
+      window.setTimeout(() => setToast(null), 3300),
+    ];
   }
 
   async function generate() {
@@ -112,18 +128,35 @@ export default function McpPage() {
                     </>
                   )}
                   <div className="mt-4">
-                    <button className={`btn btn-primary px-12 ${generating ? "btn-disabled" : ""}`} onClick={generate}>
+                    <button
+                      className={`btn btn-primary btn-soft btn-md px-12 ${generating ? "btn-disabled" : ""}`}
+                      onClick={() => (token ? confirmModalRef.current?.showModal() : generate())}
+                    >
                       {generating ? "Generating…" : token ? "Regenerate token" : "Generate token"}
                     </button>
-                    {token && (
-                      <p className="text-warning text-xs mt-2">
-                        Regenerating invalidates the old token — you&apos;ll need to reconnect Notion.
-                      </p>
-                    )}
                   </div>
                 </div>
               </div>
             </div>
+
+            {/* Regenerating invalidates the live token, so confirm first */}
+            <dialog ref={confirmModalRef} className="modal modal-bottom sm:modal-middle">
+              <div className="modal-box">
+                <h3 className="text-lg font-bold">Regenerate token?</h3>
+                <p className="py-4">
+                  This invalidates the old token — you&apos;ll need to reconnect Notion with the new one.
+                </p>
+                <div className="modal-action">
+                  <form method="dialog" className="flex gap-3">
+                    <button className="btn btn-ghost">Cancel</button>
+                    <button className="btn btn-primary" onClick={generate}>Regenerate</button>
+                  </form>
+                </div>
+              </div>
+              <form method="dialog" className="modal-backdrop">
+                <button>close</button>
+              </form>
+            </dialog>
 
             <div className="card bg-base-100 shadow-sm">
               <div className="card-body gap-2">
@@ -145,22 +178,22 @@ export default function McpPage() {
       </div>
 
       {/* Toast notification (same pattern as the sync job) */}
-      <div className={`toast toast-top toast-center transition-opacity duration-300 ${toastVisible ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
-        {toast?.type === "success" ? (
-          <div role="alert" className="alert alert-outline alert-success bg-[color-mix(in_oklch,var(--color-success)_10%,var(--color-base-100))]">
+      <div className={`toast toast-top toast-center ${toastVisible ? "" : "pointer-events-none"}`}>
+        {toast && (toast.type === "success" ? (
+          <div role="alert" className={`alert alert-outline alert-success bg-[color-mix(in_oklch,var(--color-success)_10%,var(--color-base-100))] toast-drop transition-all duration-300 ${toastVisible ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-4"}`}>
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 shrink-0 stroke-current" fill="none" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <span>{toast.message}</span>
           </div>
         ) : (
-          <div role="alert" className="alert alert-outline alert-error bg-[color-mix(in_oklch,var(--color-error)_10%,var(--color-base-100))]">
+          <div role="alert" className={`alert alert-outline alert-error bg-[color-mix(in_oklch,var(--color-error)_10%,var(--color-base-100))] toast-drop transition-all duration-300 ${toastVisible ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-4"}`}>
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 shrink-0 stroke-current" fill="none" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <span>{toast?.message}</span>
+            <span>{toast.message}</span>
           </div>
-        )}
+        ))}
       </div>
     </AppLayout>
   );

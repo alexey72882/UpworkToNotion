@@ -78,19 +78,30 @@ function InfoTip({ tip }: { tip: string }) {
   );
 }
 
-function CopyIcon() {
+function CopyIcon({ className = "" }: { className?: string }) {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 ${className}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
     </svg>
   );
 }
 
-function CheckIcon() {
+function CheckIcon({ className = "" }: { className?: string }) {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 ${className}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
     </svg>
+  );
+}
+
+// Copy → check with daisyUI's rotate swap; driven by React state, so it uses
+// swap-active rather than the hidden checkbox.
+function CopySwapIcon({ copied }: { copied: boolean }) {
+  return (
+    <span className={`swap swap-rotate ${copied ? "swap-active" : ""}`}>
+      <CheckIcon className="swap-on" />
+      <CopyIcon className="swap-off" />
+    </span>
   );
 }
 
@@ -301,7 +312,7 @@ export default function SettingsPage() {
                           disabled={!form.upwork_redirect_uri}
                           className="btn btn-ghost btn-sm btn-square absolute right-1.5 top-1/2 -translate-y-1/2"
                         >
-                          {copied === "url" ? <CheckIcon /> : <CopyIcon />}
+                          <CopySwapIcon copied={copied === "url"} />
                         </button>
                       </div>
                     </div>
@@ -320,13 +331,13 @@ export default function SettingsPage() {
                           onClick={() => copy(APP_DESCRIPTION, "desc")}
                           className="btn btn-ghost btn-sm btn-square absolute right-1.5 top-1.5"
                         >
-                          {copied === "desc" ? <CheckIcon /> : <CopyIcon />}
+                          <CopySwapIcon copied={copied === "desc"} />
                         </button>
                       </div>
                     </div>
 
                     <div className="flex justify-center">
-                      <button type="button" onClick={() => setStep(2)} className="btn btn-primary px-12">
+                      <button type="button" onClick={() => setStep(2)} className="btn btn-primary btn-soft btn-md px-12">
                         Continue →
                       </button>
                     </div>

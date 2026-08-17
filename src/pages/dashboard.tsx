@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
@@ -80,6 +80,7 @@ export default function Dashboard() {
   const [syncing, setSyncing] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
   const [toastVisible, setToastVisible] = useState(false);
+  const toastTimers = useRef<number[]>([]);
   const [, setTick] = useState(0);
 
   useEffect(() => {
@@ -88,10 +89,13 @@ export default function Dashboard() {
   }, []);
 
   function showToast(message: string, type: "success" | "error") {
+    toastTimers.current.forEach(clearTimeout);
     setToast({ message, type });
     setToastVisible(true);
-    setTimeout(() => setToastVisible(false), 3000);
-    setTimeout(() => setToast(null), 3300);
+    toastTimers.current = [
+      window.setTimeout(() => setToastVisible(false), 3000),
+      window.setTimeout(() => setToast(null), 3300),
+    ];
   }
 
   useEffect(() => {
@@ -313,22 +317,22 @@ export default function Dashboard() {
         </div>
       )}
       {/* Toast notification */}
-      <div className={`toast toast-top toast-center transition-opacity duration-300 ${toastVisible ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
-        {toast?.type === "success" ? (
-          <div role="alert" className="alert alert-outline alert-success bg-[color-mix(in_oklch,var(--color-success)_10%,var(--color-base-100))]">
+      <div className={`toast toast-top toast-center ${toastVisible ? "" : "pointer-events-none"}`}>
+        {toast && (toast.type === "success" ? (
+          <div role="alert" className={`alert alert-outline alert-success bg-[color-mix(in_oklch,var(--color-success)_10%,var(--color-base-100))] toast-drop transition-all duration-300 ${toastVisible ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-4"}`}>
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 shrink-0 stroke-current" fill="none" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <span>{toast.message}</span>
           </div>
         ) : (
-          <div role="alert" className="alert alert-outline alert-error bg-[color-mix(in_oklch,var(--color-error)_10%,var(--color-base-100))]">
+          <div role="alert" className={`alert alert-outline alert-error bg-[color-mix(in_oklch,var(--color-error)_10%,var(--color-base-100))] toast-drop transition-all duration-300 ${toastVisible ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-4"}`}>
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 shrink-0 stroke-current" fill="none" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <span>{toast?.message}</span>
+            <span>{toast.message}</span>
           </div>
-        )}
+        ))}
       </div>
     </AppLayout>
   );
