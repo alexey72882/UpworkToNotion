@@ -350,9 +350,9 @@ export default function SettingsPage() {
                       </div>
                     </div>
 
-                    <div className="flex gap-3">
+                    <div className="flex gap-3 justify-center">
                       <button type="button" onClick={() => setStep(1)} className="btn btn-outline">← Back</button>
-                      <button type="button" onClick={saveAndConnect} disabled={saving} className="btn btn-soft btn-primary flex-1">
+                      <button type="button" onClick={saveAndConnect} disabled={saving} className="btn btn-soft btn-primary px-12">
                         {saving && <span className="loading loading-spinner loading-xs" />}
                         {saving ? "Connecting…" : "Save & Connect"}
                       </button>
