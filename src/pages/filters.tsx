@@ -728,14 +728,14 @@ export default function FiltersPage() {
       {/* Toast notification */}
       <div className={`toast toast-top toast-center ${toastVisible ? "" : "pointer-events-none"}`}>
         {toast && (toast.type === "success" ? (
-          <div role="alert" className={`alert alert-outline alert-success bg-[color-mix(in_oklch,var(--color-success)_10%,var(--color-base-100))] toast-drop transition-all duration-300 ${toastVisible ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-4"}`}>
+          <div role="alert" className={`alert alert-outline alert-success bg-[color-mix(in_oklch,var(--color-success)_10%,transparent)] toast-drop transition-all duration-300 ${toastVisible ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-4"}`}>
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 shrink-0 stroke-current" fill="none" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <span>{toast.message}</span>
           </div>
         ) : (
-          <div role="alert" className={`alert alert-outline alert-info bg-[color-mix(in_oklch,var(--color-info)_10%,var(--color-base-100))] toast-drop transition-all duration-300 ${toastVisible ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-4"}`}>
+          <div role="alert" className={`alert alert-outline alert-info bg-[color-mix(in_oklch,var(--color-info)_10%,transparent)] toast-drop transition-all duration-300 ${toastVisible ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-4"}`}>
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 shrink-0 stroke-current" fill="none" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
