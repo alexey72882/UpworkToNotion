@@ -149,7 +149,7 @@ export default function McpPage() {
                 <div className="modal-action">
                   <form method="dialog" className="flex gap-3">
                     <button className="btn btn-ghost">Cancel</button>
-                    <button className="btn btn-primary" onClick={generate}>Regenerate</button>
+                    <button className="btn btn-warning" onClick={generate}>Regenerate</button>
                   </form>
                 </div>
               </div>
