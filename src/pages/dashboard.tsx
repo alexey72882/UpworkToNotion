@@ -190,7 +190,7 @@ export default function Dashboard() {
               </p>
             </div>
             <div>
-              <Link href="/settings" className="btn btn-primary btn-sm">
+              <Link href="/settings" className="btn btn-primary btn-md">
                 Set up integrations
                 <ChevronRight />
               </Link>
