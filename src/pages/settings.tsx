@@ -4,6 +4,7 @@ import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
 import AppLayout from "@/components/AppLayout";
 
 const UPWORK_INSTRUCTIONS_URL = "https://www.upwork.com/developer/keys/new";
+const UPWORK_TUTORIAL_URL = "#"; // TODO: replace with real tutorial URL
 const NOTION_INSTRUCTIONS_URL = "https://www.notion.so/my-integrations";
 const APP_DESCRIPTION =
   "Freelancelog is a personal productivity tool that syncs my Upwork job feed and proposal activity into Notion for tracking and reporting.";
@@ -62,6 +63,41 @@ function ReconnectIcon() {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+    </svg>
+  );
+}
+
+// Small "i" tooltip — reused from the Filters screen
+function InfoTip({ tip }: { tip: string }) {
+  return (
+    <div className="tooltip tooltip-right" data-tip={tip}>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="size-4 text-base-content/40 cursor-default">
+        <path fillRule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-7-4a1 1 0 1 1-2 0 1 1 0 0 1 2 0ZM9 9a.75.75 0 0 0 0 1.5h.253a.25.25 0 0 1 .244.304l-.459 2.066A1.75 1.75 0 0 0 10.747 15H11a.75.75 0 0 0 0-1.5h-.253a.25.25 0 0 1-.244-.304l.459-2.066A1.75 1.75 0 0 0 9.253 9H9Z" clipRule="evenodd" />
+      </svg>
+    </div>
+  );
+}
+
+function CopyIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+    </svg>
+  );
+}
+
+function ExternalLinkIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
     </svg>
   );
 }
@@ -225,68 +261,79 @@ export default function SettingsPage() {
                   <UpworkLogo />
                 </div>
 
-                {/* Instructions */}
-                <div role="alert" className="alert alert-vertical sm:alert-horizontal mb-6">
-                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" className="stroke-info h-6 w-6 shrink-0">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <div>
-                    <h3 className="font-bold">Instructions</h3>
-                    <div className="text-xs">To connect Upwork, you&apos;ll need an API Client key and Secret. Apply via the Upwork Developer Portal — approval can take up to 24 hours.</div>
-                  </div>
-                  <a href={UPWORK_INSTRUCTIONS_URL} target="_blank" rel="noreferrer" className="btn btn-sm">Go to instructions</a>
-                </div>
-
                 {step === 1 ? (
                   <>
-                    <span className="badge badge-soft badge-primary mb-3">STEP 1</span>
-                    <h3 className="text-lg font-bold mb-1">Prepare your API key application</h3>
-                    <p className="text-sm text-base-content/60 mb-6">
-                      Copy this URL and set it as your OAuth Callback URL when you create your app in the Upwork Developer Portal.
-                    </p>
+                    <span className="badge badge-outline badge-info mb-3">Step 1</span>
+                    <h3 className="text-lg font-bold mb-4">Create your API key application</h3>
 
-                    {/* OAuth callback URL */}
+                    {/* Info box */}
+                    <div className="rounded-xl bg-base-200 p-4 mb-8">
+                      <div className="flex gap-3">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" className="stroke-info h-6 w-6 shrink-0">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <div className="flex flex-col gap-2">
+                          <p className="text-sm">Upwork approval can take up to 24 hours. Start now, finish later.</p>
+                          <a href={UPWORK_TUTORIAL_URL} target="_blank" rel="noreferrer" className="link link-primary inline-flex items-center gap-2 text-sm font-medium">
+                            <ExternalLinkIcon />
+                            Tutorial
+                          </a>
+                          <a href={UPWORK_INSTRUCTIONS_URL} target="_blank" rel="noreferrer" className="link link-primary inline-flex items-center gap-2 text-sm font-medium">
+                            <ExternalLinkIcon />
+                            Go to Upwork Developer Portal
+                          </a>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 1. OAuth callback URL */}
                     <div className="mb-6">
-                      <label className="label py-1 px-0"><span className="label-text text-sm">OAuth callback URL</span></label>
-                      <div className="flex gap-2">
-                        <code className="flex-1 min-w-0 bg-base-200 px-3 py-2.5 rounded-lg truncate">{form.upwork_redirect_uri || "Getting your callback URL…"}</code>
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <span className="text-sm font-bold">1. OAuth callback URL</span>
+                        <InfoTip tip={"Copy this and paste it as the OAuth Callback URL when you create your app in the Upwork Developer Portal."} />
+                      </div>
+                      <div className="relative">
+                        <code className="block bg-base-200 pl-3 pr-12 py-2.5 rounded-lg truncate">{form.upwork_redirect_uri || "Getting your callback URL…"}</code>
                         <button
                           type="button"
+                          aria-label="Copy callback URL"
                           onClick={() => form.upwork_redirect_uri && copy(form.upwork_redirect_uri, "url")}
                           disabled={!form.upwork_redirect_uri}
-                          className="btn btn-outline"
+                          className="btn btn-ghost btn-sm btn-square absolute right-1.5 top-1/2 -translate-y-1/2"
                         >
-                          {copied === "url" ? "Copied ✓" : "Copy"}
+                          {copied === "url" ? <CheckIcon /> : <CopyIcon />}
                         </button>
                       </div>
                     </div>
 
-                    {/* Application description */}
-                    <div className="mb-6">
-                      <label className="label py-1 px-0"><span className="label-text text-sm">Application description</span></label>
-                      <p className="text-xs text-base-content/60 mb-2">Pre-written for you based on your project. Paste this into Upwork&apos;s application form.</p>
-                      <div className="flex gap-2 items-start">
-                        <div className="flex-1 min-w-0 bg-base-200 px-3 py-2.5 rounded-lg text-sm">{APP_DESCRIPTION}</div>
-                        <button type="button" onClick={() => copy(APP_DESCRIPTION, "desc")} className="btn btn-outline">
-                          {copied === "desc" ? "Copied ✓" : "Copy"}
+                    {/* 2. Application description */}
+                    <div className="mb-8">
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <span className="text-sm font-bold">2. Application description</span>
+                        <InfoTip tip={"Pre-written for you based on your project. Paste this into the application description field on Upwork's form."} />
+                      </div>
+                      <div className="relative">
+                        <div className="bg-base-200 pl-3 pr-12 py-2.5 rounded-lg text-sm">{APP_DESCRIPTION}</div>
+                        <button
+                          type="button"
+                          aria-label="Copy application description"
+                          onClick={() => copy(APP_DESCRIPTION, "desc")}
+                          className="btn btn-ghost btn-sm btn-square absolute right-1.5 top-1.5"
+                        >
+                          {copied === "desc" ? <CheckIcon /> : <CopyIcon />}
                         </button>
                       </div>
                     </div>
 
-                    <a href={UPWORK_INSTRUCTIONS_URL} target="_blank" rel="noreferrer" className="link link-primary inline-flex items-center gap-2 mb-6">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                      </svg>
-                      Go to Upwork Developer Portal
-                    </a>
-
-                    <button type="button" onClick={() => setStep(2)} className="btn btn-block btn-soft btn-primary">
-                      Continue →
-                    </button>
+                    <div className="flex justify-center">
+                      <button type="button" onClick={() => setStep(2)} className="btn btn-primary px-12">
+                        Continue →
+                      </button>
+                    </div>
                   </>
                 ) : (
                   <>
-                    <span className="badge badge-soft badge-primary mb-3">STEP 2</span>
+                    <span className="badge badge-outline badge-info mb-3">Step 2</span>
                     <h3 className="text-lg font-bold mb-1">Connect your API</h3>
                     <p className="text-sm text-base-content/60 mb-6">Paste the credentials from the app you just created in Upwork.</p>
 
