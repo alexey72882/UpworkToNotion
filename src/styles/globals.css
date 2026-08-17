@@ -8,12 +8,13 @@
 html { font-size: 114.3%; }
 html:has(.landing-page) { font-size: 100%; }
 
-/* The Filters page swaps a full skeleton subtree for the real content on load;
-   that content's first paint shows one high-contrast frame (dark chips + a dark
-   ring around the card) before styles settle. Fade the content in so the flash
-   frame isn't visible. */
-@keyframes contentFadeIn { from { opacity: 0; } to { opacity: 1; } }
-.content-fade-in { animation: contentFadeIn 0.25s ease-out; }
+/* daisyUI gives .card `transition: outline .2s` plus focus / `:has(:checked)`
+   outline rules. During the Filters skeleton→content swap the card briefly
+   gets an outline, which the transition then animates down to 0 — showing as a
+   ~200ms fading near-black ring (verified: 3px outline in --color-base-content,
+   no focus/`:has` match — it's the transition remnant). Our cards are
+   presentational, never interactive, so no card ever needs an outline. */
+.card { outline: none !important; }
 
 .tooltip::before {
   white-space: pre-line;

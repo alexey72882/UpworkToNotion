@@ -325,7 +325,7 @@ export default function FiltersPage() {
 
   return (
     <AppLayout>
-      <div className="flex flex-col gap-6 content-fade-in">
+      <div className="flex flex-col gap-6">
         <h2 className="text-2xl font-semibold text-base-content">Upwork Job Filter</h2>
 
         {/* Active filter chips */}
