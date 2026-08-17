@@ -3,12 +3,49 @@ import { useRouter } from "next/router";
 import AppLayout from "@/components/AppLayout";
 import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
 
+function CopyIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+    </svg>
+  );
+}
+
+// Read-only value with an overlaid icon copy button — same pattern as Settings step 1
+function CopyField({ label, value, copied, onCopy }: { label: string; value: string; copied: boolean; onCopy: () => void }) {
+  return (
+    <div>
+      <div className="text-sm font-bold mb-2">{label}</div>
+      <div className="relative">
+        <code className="block bg-base-200 pl-3 pr-12 py-2.5 rounded-lg font-mono text-sm truncate">{value}</code>
+        <button
+          type="button"
+          aria-label={`Copy ${label}`}
+          onClick={onCopy}
+          className="btn btn-ghost btn-sm btn-square absolute right-1.5 top-1/2 -translate-y-1/2"
+        >
+          {copied ? <CheckIcon /> : <CopyIcon />}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function McpPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [token, setToken] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [serverUrl, setServerUrl] = useState("");
+  const [copied, setCopied] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
   const [toastVisible, setToastVisible] = useState(false);
 
@@ -38,19 +75,12 @@ export default function McpPage() {
     if (d.ok) setToken(d.token);
   }
 
-  function copy(value: string) {
+  function copy(value: string, id: string) {
     navigator.clipboard.writeText(value);
+    setCopied(id);
+    setTimeout(() => setCopied(null), 1500);
     showToast("Copied to clipboard", "success");
   }
-
-  const mailIcon = (
-    <svg className="h-[1em] opacity-50" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-      <g strokeLinejoin="round" strokeLinecap="round" strokeWidth="2.5" fill="none" stroke="currentColor">
-        <rect width="20" height="16" x="2" y="4" rx="2"></rect>
-        <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"></path>
-      </g>
-    </svg>
-  );
 
   return (
     <AppLayout>
@@ -70,36 +100,19 @@ export default function McpPage() {
               <div className="card-body gap-4">
                 <h2 className="card-title text-lg">Connection</h2>
 
-                <div>
-                  <label className="label"><span className="label-text">Server URL</span></label>
-                  <div className="join w-full">
-                    <div className="flex-1">
-                      <label className="input validator join-item w-full font-mono text-sm">
-                        {mailIcon}
-                        <input type="text" readOnly value={serverUrl} />
-                      </label>
-                    </div>
-                    <button className="btn btn-neutral join-item" onClick={() => copy(serverUrl)}>Copy</button>
-                  </div>
-                </div>
+                <CopyField label="Server URL" value={serverUrl} copied={copied === "url"} onCopy={() => copy(serverUrl, "url")} />
 
                 <div>
-                  <label className="label"><span className="label-text">Auth token (Bearer)</span></label>
                   {token ? (
-                    <div className="join w-full">
-                      <div className="flex-1">
-                        <label className="input validator join-item w-full font-mono text-sm">
-                          {mailIcon}
-                          <input type="text" readOnly value={token} />
-                        </label>
-                      </div>
-                      <button className="btn btn-neutral join-item" onClick={() => copy(token)}>Copy</button>
-                    </div>
+                    <CopyField label="Auth token (Bearer)" value={token} copied={copied === "token"} onCopy={() => copy(token, "token")} />
                   ) : (
-                    <p className="text-base-content/60 text-sm">No token yet — generate one below.</p>
+                    <>
+                      <div className="text-sm font-bold mb-2">Auth token (Bearer)</div>
+                      <p className="text-base-content/60 text-sm">No token yet — generate one below.</p>
+                    </>
                   )}
-                  <div className="mt-3">
-                    <button className={`btn btn-primary btn-soft ${generating ? "btn-disabled" : ""}`} onClick={generate}>
+                  <div className="mt-4">
+                    <button className={`btn btn-primary px-12 ${generating ? "btn-disabled" : ""}`} onClick={generate}>
                       {generating ? "Generating…" : token ? "Regenerate token" : "Generate token"}
                     </button>
                     {token && (
