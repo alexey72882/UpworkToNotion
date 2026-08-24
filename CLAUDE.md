@@ -276,6 +276,8 @@ The product spec lives in `specs/specs/0001-upwork-notion-v0.1.md`. The sync pip
 
 Implementation reference, confirmed API values, known quirks, and the dated worklog live in **`docs/engineering-notes.md`** (split out to keep this file focused).
 
+Upwork's MCP server — the real endpoint, its redirect-URI allowlist (Notion is blocked, Claude is not), and what that rules out for no-API-key routes — is in **`docs/upwork-mcp.md`**.
+
 Forward-looking specs live in `specs/specs/`:
 - `0001-upwork-notion-v0.1.md` — original product spec & roadmap
 - `0002-20-user-readiness.md` — scaling the sync pipeline to ~20 users

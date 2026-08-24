@@ -136,6 +136,12 @@ Both the work diary and job feed use a bulk page map to prevent duplicate Notion
 
 ## Worklog
 
+### Upwork MCP — routes that need no API key (2026-08-22)
+
+Probed whether a Notion user could pull Upwork jobs without an Upwork API key. **Notion is blocked**: Upwork allowlists OAuth return addresses by domain, and every Notion host is rejected (`claude.ai`, `chatgpt.com`, `cursor.com` and loopback are accepted). **Claude works** and was proven end to end — jobs into a Notion database with no key and no backend.
+
+Full findings, the allowlist table, the two gotchas (dropdown options, no dedup), the message to send Upwork, and re-check commands: [`upwork-mcp.md`](upwork-mcp.md).
+
 ### What's done (as of 2026-07-31)
 
 - Full OAuth flow working (auth → callback → tokens saved to Supabase)
