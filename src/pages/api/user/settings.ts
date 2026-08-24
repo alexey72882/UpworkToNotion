@@ -1,6 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getSupabaseServer } from "@/lib/supabaseServer";
 import { getSupabase } from "@/lib/supabase";
+import { assignMessageIndex } from "@/lib/apiKeyMessage";
+import { messageForIndex } from "@/lib/apiKeyMessages";
 
 export const config = { runtime: "nodejs" };
 
@@ -14,11 +16,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (req.method === "GET") {
     const { data, error } = await db
       .from("user_settings")
-      .select("notion_token, job_feed_db_id, diary_db_id, upwork_person_id, upwork_name, upwork_client_id, upwork_client_secret, upwork_redirect_uri, last_sync_at, prev_sync_at, last_sync_result, total_jobs_created, total_diary_synced, web_filter")
+      .select("notion_token, job_feed_db_id, diary_db_id, upwork_person_id, upwork_name, upwork_client_id, upwork_client_secret, upwork_redirect_uri, last_sync_at, prev_sync_at, last_sync_result, total_jobs_created, total_diary_synced, web_filter, api_key_message_index")
       .eq("user_id", user.id)
       .maybeSingle();
     if (error) return res.status(500).json({ ok: false, error: error.message });
-    return res.status(200).json({ ok: true, settings: data ?? {} });
+
+    const index = data?.api_key_message_index ?? await assignMessageIndex(user.id);
+    return res.status(200).json({
+      ok: true,
+      settings: { ...(data ?? {}), api_key_message: messageForIndex(index) },
+    });
   }
 
   if (req.method === "PATCH") {
