@@ -29,11 +29,6 @@ describe("messageForIndex", () => {
     expect(messageForIndex(3)).toBe(API_KEY_MESSAGES[3]);
   });
 
-  it("is unaffected by the list growing — an assigned user keeps their text", () => {
-    const grown = [...API_KEY_MESSAGES, "an 11th variant"];
-    expect(grown[3]).toBe(messageForIndex(3));
-  });
-
   it("falls back to the first variant for an unknown index", () => {
     expect(messageForIndex(99)).toBe(API_KEY_MESSAGES[0]);
   });

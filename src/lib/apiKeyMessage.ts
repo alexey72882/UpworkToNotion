@@ -15,7 +15,9 @@ export async function assignMessageIndex(userId: string): Promise<number> {
   if (existing?.api_key_message_index != null) return existing.api_key_message_index;
 
   // A real sequence, not `count(*)` — two concurrent claims must not land on the same slot.
-  const { data: seq } = await db.rpc("next_api_key_message_seq");
+  const { data: seq, error } = await db.rpc("next_api_key_message_seq");
+  // Don't persist a garbage index — a failed claim must stay unassigned so the next GET retries.
+  if (error || seq == null) return 0;
   const index = messageIndexForSeq(Number(seq));
 
   // Upsert (not update) — a brand-new user has no user_settings row yet.
