@@ -181,3 +181,20 @@ Full findings, the allowlist table, the two gotchas (dropdown options, no dedup)
 - **Sidebar**: gradient `linear-gradient(to bottom, #312E81, #0F0E1A)` replacing flat `#2F4F82`.
 - **Figma assets**: downloaded to `public/figma/` — `upwork-logo.svg`, `notion-logo.svg`, `dashboard-banner-616c12.png`. Upwork and Notion logos are inline SVG components in `settings.tsx`.
 - **Filters page**: "Verified Payment only" toggle uses daisyUI toggle with checkmark (enabled) / X (disabled) SVG icons.
+
+### Per-user API-key request message (2026-08-24, spec 0005)
+
+Settings Step 1 "Application description" is now one of 10 paraphrases (`src/lib/apiKeyMessages.ts`)
+instead of a shared one-liner, so Upwork reviewers don't see identical applications. Round-robin by
+claim order (11th user → message #1); the resolved index is stored and never recomputed, so growing
+the list doesn't change anyone's existing text. Claimed lazily on the first `/api/user/settings` GET.
+
+SQL run by hand in Supabase:
+
+```sql
+alter table user_settings add column api_key_message_index int;
+create sequence api_key_message_seq;
+create function public.next_api_key_message_seq() returns bigint
+  language sql as $$ select nextval('api_key_message_seq') $$;
+notify pgrst, 'reload schema';
+```

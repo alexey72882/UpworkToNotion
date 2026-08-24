@@ -7,8 +7,6 @@ import { ChevronLeft, ChevronRight } from "@/components/Chevron";
 const UPWORK_INSTRUCTIONS_URL = "https://www.upwork.com/developer/keys/new";
 const UPWORK_TUTORIAL_URL = "#"; // TODO: replace with real tutorial URL
 const NOTION_INSTRUCTIONS_URL = "https://www.notion.so/my-integrations";
-const APP_DESCRIPTION =
-  "Freelancelog is a personal productivity tool that syncs my Upwork job feed and proposal activity into Notion for tracking and reporting.";
 
 type Settings = {
   notion_token?: string;
@@ -18,6 +16,7 @@ type Settings = {
   upwork_client_id?: string;
   upwork_client_secret?: string;
   upwork_redirect_uri?: string;
+  api_key_message?: string;
 };
 
 type Tab = "upwork" | "notion";
@@ -325,11 +324,14 @@ export default function SettingsPage() {
                         <InfoTip tip={"Pre-written for you based on your project. Paste this into the application description field on Upwork's form."} />
                       </div>
                       <div className="relative">
-                        <div className="bg-base-200 pl-3 pr-12 py-2.5 rounded-lg text-sm">{APP_DESCRIPTION}</div>
+                        <div className="bg-base-200 pl-3 pr-12 py-2.5 rounded-lg text-sm whitespace-pre-line">
+                          {form.api_key_message || "Getting your application description…"}
+                        </div>
                         <button
                           type="button"
                           aria-label="Copy application description"
-                          onClick={() => copy(APP_DESCRIPTION, "desc")}
+                          onClick={() => form.api_key_message && copy(form.api_key_message, "desc")}
+                          disabled={!form.api_key_message}
                           className="btn btn-ghost btn-sm btn-square absolute right-1.5 top-1.5"
                         >
                           <CopySwapIcon copied={copied === "desc"} />
